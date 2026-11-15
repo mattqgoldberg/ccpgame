@@ -5,6 +5,7 @@ import { TICKS_PER_SECOND, clockAllowed, featuresOf, useFeatures, useGame, type 
 import { Canvas } from './Canvas';
 import { Coach } from './Coach';
 import { NoticeModal, ReportModal } from './Modals';
+import { DotLegend } from './RequestDots';
 import { Palette } from './Palette';
 import { Sidebar, TABS } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -67,6 +68,7 @@ export function Game() {
         {hasPalette && <Palette />}
         <main className="canvas">
           <Canvas />
+          {running && <DotLegend />}
           <Coach />
         </main>
         {hasSidebar && <Sidebar />}

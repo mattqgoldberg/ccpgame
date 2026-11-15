@@ -3,6 +3,7 @@ import { useTut } from '../game/store';
 import { CATALOG, SIZES, nodeCapacity } from '../sim/catalog';
 import { azName } from '../sim/engine';
 import type { NodeMetrics, SimNode, Traffic } from '../sim/types';
+import { CustomerChatter } from './CustomerChatter';
 import { compact } from './format';
 
 export type ServiceNodeData = {
@@ -57,6 +58,7 @@ export function ServiceNode({ data, selected }: NodeProps<ServiceRFNode>) {
   return (
     <div className={`svc cat-${def.category} status-${status} ${selected ? 'selected' : ''}${tut}`}>
       {hasTarget && <Handle type="target" position={Position.Left} className={connectable ? '' : 'hidden-handle'} isConnectable={connectable} />}
+      {node.kind === 'users' && <CustomerChatter />}
       <div className="svc-badge">{def.short}</div>
       <div className="svc-body">
         <div className="svc-name">{def.name}</div>

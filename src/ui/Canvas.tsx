@@ -10,7 +10,7 @@ import {
   type IsValidConnection,
   type NodeChange,
 } from '@xyflow/react';
-import { useFeatures, useGame } from '../game/store';
+import { clockAllowed, useFeatures, useGame } from '../game/store';
 import { canConnect } from '../sim/catalog';
 import type { ServiceKind } from '../sim/types';
 import { FlowEdge, type FlowRFEdge } from './FlowEdge';
@@ -24,6 +24,7 @@ export function Canvas() {
   const sim = useGame((s) => s.sim)!;
   const selectedId = useGame((s) => s.selectedId);
   const selectedEdgeId = useGame((s) => s.selectedEdgeId);
+  const running = useGame((s) => s.speed > 0 && clockAllowed(s) && !s.sim?.notices.length && !s.sim?.finished);
   const { moveNode, select, selectEdge, removeNode, removeEdge, connect, addService } = useGame.getState();
   const { screenToFlowPosition } = useReactFlow();
   const features = useFeatures();
@@ -61,13 +62,18 @@ export function Canvas() {
         target: e.target,
         selected: e.id === selectedEdgeId,
         deletable: canDelete,
-        animated: flow > 0.05,
-        data: { flow, tutKey: `edge-${kind(e.source)}-${kind(e.target)}` },
+        data: {
+          flow,
+          tutKey: `edge-${kind(e.source)}-${kind(e.target)}`,
+          mix: sim.last.edgeMix?.[e.id],
+          failRate: sim.last.nodes[e.target]?.failRate ?? 0,
+          running,
+        },
         style: { strokeWidth: 2 + Math.min(4, Math.log10(1 + flow)) },
         markerEnd: { type: MarkerType.ArrowClosed },
       };
     });
-  }, [sim, canDelete, selectedEdgeId]);
+  }, [sim, canDelete, selectedEdgeId, running]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<ServiceRFNode>[]) => {

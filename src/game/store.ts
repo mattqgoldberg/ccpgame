@@ -279,7 +279,9 @@ export function useFeatures(): Set<Feature> {
 export function useTut(key: string): string {
   const active = useGame((s) => {
     const step = currentStep(s);
-    return !!step && !s.stepDone && step.highlight === key;
+    // Once time is running there's nothing to click, so drop the marker.
+    if (!step || s.stepDone || step.highlight !== key) return false;
+    return !(step.clock && s.speed > 0);
   });
   return active ? ' tut-pulse' : '';
 }

@@ -74,6 +74,17 @@ describe('engine', () => {
     expect(s.nodes.find((n) => n.id === 'web')!.compromisedUntil).toBe(12);
   });
 
+  it('reports how much traffic fails at each node, and the mix on each connection', () => {
+    const s = createSim(ch3);
+    updateConfig(s, 'web', { size: 'small' });
+    const flow = simulateFlow(s, { static: 0, dynamic: 120, junk: 0 });
+    expect(flow.nodes.web.failRate).toBeGreaterThan(0.5);
+    expect(flow.nodes.db.failRate).toBe(0);
+    expect(flow.edgeMix['e-cdn-web'].dynamic).toBeCloseTo(120);
+    s.edges = s.edges.filter((e) => e.id !== 'e-web-db');
+    expect(simulateFlow(s, { static: 0, dynamic: 10, junk: 0 }).nodes.web.failRate).toBeCloseTo(1);
+  });
+
   it('absorbs an HTTP flood at the edge when CloudFront is in front', () => {
     const s = createSim(ch3);
     const flow = simulateFlow(s, { static: 0, dynamic: 0, junk: 1000 });

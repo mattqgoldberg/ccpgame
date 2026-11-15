@@ -76,7 +76,8 @@ const firstDay: Mission = {
     {
       id: 'watch-day', title: 'Watch the traffic',
       body: [
-        'The number on the line between Customers and the server is requests per second. Mornings are quiet, and traffic peaks in the evening when people shop after work.',
+        'Each dot moving along the line is a request: blue for pages, green for files like photos. Red dots are requests that are failing. The number on the line is requests per second.',
+        'Customers react above the Customers box. Mornings are quiet, and traffic peaks in the evening when people shop after work.',
       ],
       task: 'Let one full day go by.',
       done: hourAtLeast(DAY), clock: true,

@@ -63,6 +63,8 @@ export interface NodeMetrics {
   warning?: string;
   /** Requests per second handled (not dropped). */
   throughput: number;
+  /** Share of requests arriving here that failed here (over capacity, down, or nowhere to send them). */
+  failRate?: number;
   costPerHour: number;
 }
 
@@ -157,6 +159,8 @@ export interface SimState {
     cost: number;
     nodes: Record<string, NodeMetrics>;
     edges: Record<string, number>;
+    /** Per-connection traffic by type, for the map animation. */
+    edgeMix?: Record<string, Traffic>;
   };
   history: HourSample[];
   /** Month-to-date bill line items, in dollars. */

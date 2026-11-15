@@ -175,12 +175,13 @@ interface FlowResult {
   cloudfrontRequests: number;
   nodes: Record<string, NodeMetrics>;
   edges: Record<string, number>;
+  edgeMix: Record<string, Traffic>;
 }
 
 export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
   const r: FlowResult = {
     servedStatic: 0, servedDynamic: 0, latencyWeighted: 0, edgeServed: 0, junkAtEdge: 0,
-    originMb: 0, edgeMb: 0, s3Gets: 0, cloudfrontRequests: 0, nodes: {}, edges: {},
+    originMb: 0, edgeMb: 0, s3Gets: 0, cloudfrontRequests: 0, nodes: {}, edges: {}, edgeMix: {},
   };
   const byId = new Map(s.nodes.map((n) => [n.id, n]));
   const down = new Map(s.nodes.map((n) => [n.id, downReason(s, n)]));
@@ -216,6 +217,8 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
     const capacity = reason ? 0 : effectiveCapacity(s, node);
     const load = flows.reduce((sum, f) => sum + f.rps * weightFor(node, f.type), 0);
     const kept = load > 0 ? Math.min(1, capacity / load) : 1;
+    const arriving = flows.reduce((sum, f) => sum + f.rps, 0);
+    let dropped = arriving * (1 - kept);
     const utilization = capacity > 0 && Number.isFinite(capacity) ? Math.min(1, load / capacity) : load > 0 && capacity === 0 ? 1 : 0;
     const hopLatency = def.latencyMs * (1 + 3 * utilization ** 4);
     let warning: string | undefined;
@@ -226,11 +229,14 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
       const targets = children.filter((c) => eligible(c.node));
       if (targets.length === 0) {
         if (rps > 0.01) warning = missing;
+        dropped += rps;
         return;
       }
       const share = rps / targets.length;
       for (const t of targets) {
         r.edges[t.edgeId] = (r.edges[t.edgeId] ?? 0) + share;
+        const mix = (r.edgeMix[t.edgeId] ??= { static: 0, dynamic: 0, junk: 0 });
+        mix[f.type] += share;
         if (!incoming.has(t.node.id)) incoming.set(t.node.id, []);
         incoming.get(t.node.id)!.push({ type: f.type, rps: share, latency, viaEdge });
       }
@@ -277,6 +283,7 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
           if (f.type === 'dynamic') {
             warning = 'S3 only serves files; it can’t run application code';
             throughput -= rps;
+            dropped += rps;
           } else {
             r.s3Gets += rps;
             serve(node, { ...f, latency }, rps);
@@ -302,6 +309,7 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
       downReason: reason,
       warning,
       throughput,
+      failRate: arriving > 0 ? Math.min(1, dropped / arriving) : 0,
       costPerHour: nodeHourlyCost(node, load),
     };
   }
@@ -713,7 +721,7 @@ export function step(s: SimState, ch: ChapterDef) {
 
   raiseAlarms(s, flow, availability);
 
-  s.last = { demand, served, latencyMs, revenue, cost, nodes: flow.nodes, edges: flow.edges };
+  s.last = { demand, served, latencyMs, revenue, cost, nodes: flow.nodes, edges: flow.edges, edgeMix: flow.edgeMix };
   s.history.push({ hour: s.hour, demand: wanted, served, latencyMs, revenue, cost });
   trackIncident(s, availability);
 
