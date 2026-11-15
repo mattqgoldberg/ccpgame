@@ -15,6 +15,7 @@ function reachableCodexIds(): Set<string> {
   for (const m of MISSIONS) {
     [...m.codexOnStart, ...m.codexOnComplete].forEach((id) => ids.add(id));
     for (const ev of m.events) if ('codexIds' in ev) ev.codexIds?.forEach((id) => ids.add(id));
+    for (const st of m.steps) st.codex?.forEach((id) => ids.add(id));
   }
   for (const q of QUESTIONS) q.codexIds.forEach((id) => ids.add(id));
   // Unlocked directly by the engine.
@@ -36,6 +37,7 @@ function featureFor(highlight: string): Feature | null {
   if (highlight === 'inspect-multiaz') return 'config-multiaz';
   if (highlight === 'advisor-mfa') return 'tab-advisor';
   if (prefix === 'node') return null;
+  if (prefix === 'edge') return 'connect';
   throw new Error(`Unknown highlight "${highlight}"`);
 }
 
@@ -72,6 +74,35 @@ describe('missions', () => {
       expect(coverageIds.has(id), `${id} missing from coverage matrix`).toBe(true);
       expect(CODEX_TEXT[id], `${id} missing Codex text`).toBeTruthy();
     }
+  });
+
+  it('only ask investor questions about things the player has already met', () => {
+    /** Codex topics the player has met before `hour` of mission `index`. */
+    const topicsBefore = (index: number, hour: number) => {
+      const known = new Set<string>(['mfa', 'root-user']);
+      MISSIONS.slice(0, index + 1).forEach((m, j) => {
+        const current = j === index;
+        m.available.forEach((k) => CATALOG[k].codexId && known.add(CATALOG[k].codexId!));
+        m.codexOnStart.forEach((id) => known.add(id));
+        m.steps.forEach((st) => st.codex?.forEach((id) => known.add(id)));
+        if (!current) m.codexOnComplete.forEach((id) => known.add(id));
+        for (const ev of m.events) {
+          if (current && (ev.at === undefined || ev.at >= hour)) continue;
+          if ('codexIds' in ev) ev.codexIds?.forEach((id) => known.add(id));
+          if (ev.kind === 'board') getQuestion(ev.questionId)?.codexIds.forEach((id) => known.add(id));
+        }
+      });
+      return known;
+    };
+    MISSIONS.forEach((m, i) => {
+      for (const ev of m.events) {
+        if (ev.kind !== 'board' || ev.at === undefined) continue;
+        const known = topicsBefore(i, ev.at);
+        for (const topic of getQuestion(ev.questionId)!.codexIds) {
+          expect(known.has(topic), `${m.id}: "${ev.questionId}" asks about "${topic}" before it's taught`).toBe(true);
+        }
+      }
+    });
   });
 
   it('reference real board questions with a valid answer', () => {

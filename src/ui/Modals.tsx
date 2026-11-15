@@ -143,7 +143,10 @@ export function ReportModal() {
   const sim = useGame((s) => s.sim)!;
   const showPillars = useFeatures().has('report-card');
   const { startMission, exitToMenu } = useGame.getState();
-  const [openPillar, setOpenPillar] = useState<string | null>(null);
+  // Open the weakest pillar by default so it's obvious the rows expand.
+  const weakest = [...report.pillars].sort((a, b) => a.score - b.score)[0]?.name ?? null;
+  const [openPillar, setOpenPillar] = useState<string | null>(weakest);
+  const nextStarAt = report.overall < 60 ? 60 : report.overall < 80 ? 80 : null;
   const next = MISSIONS[missionIdx + 1];
   const chapter = CHAPTERS.find((c) => c.id === mission.chapter);
 
@@ -161,30 +164,51 @@ export function ReportModal() {
       </ul>
       {showPillars && (
         <>
-          <h4>Well-Architected review · {report.overall}/100</h4>
+          <div className="star-key">
+            <span>★ goals met</span>
+            <span>★★ design score 60+</span>
+            <span>★★★ design score 80+</span>
+          </div>
+          <p className="small muted">
+            Stars are your grade for this mission. Replay any mission to improve it.
+            {report.passed && nextStarAt && ` Your design scored ${report.overall}: reach ${nextStarAt} for the next star.`}
+          </p>
+          <h4>Well-Architected review · design score {report.overall}/100</h4>
           {mission.teachReport && (
             <p className="small explainer">
-              New: at the end of every mission, your design is graded on the six pillars of the AWS Well-Architected Framework. Click a pillar to see why it scored
-              the way it did. Meeting the goals earns ★; scoring 60+ earns ★★; 80+ earns ★★★.
+              New: at the end of each mission, AWS-style reviewers grade your design on the six pillars of the AWS Well-Architected Framework. Some things
+              can’t be fixed while you’re running physical servers (they’re marked 🔒). That changes once you move to the cloud.
             </p>
           )}
+          <p className="small muted">▸ Click a pillar to see what affected it and how to improve.</p>
           <div className="pillars">
-            {report.pillars.map((p) => (
-              <div key={p.name} className="pillar">
-                <button className="pillar-head" onClick={() => setOpenPillar(openPillar === p.name ? null : p.name)}>
-                  <span>{p.name}</span>
-                  <span className="pillar-bar"><span style={{ width: `${p.score}%` }} className={p.score >= 80 ? 'good' : p.score >= 50 ? 'warn' : 'bad'} /></span>
-                  <span className="pillar-score">{p.score}</span>
-                </button>
-                {openPillar === p.name && (
-                  <ul className="criteria">
-                    {p.criteria.map((c) => (
-                      <li key={c.label}><strong>{c.label}</strong> {c.score}/100: <span className="muted">{c.detail}</span></li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
+            {report.pillars.map((p) => {
+              const open = openPillar === p.name;
+              return (
+                <div key={p.name} className={`pillar ${open ? 'open' : ''}`}>
+                  <button className="pillar-head" onClick={() => setOpenPillar(open ? null : p.name)} aria-expanded={open}>
+                    <span className="chevron">{open ? '▾' : '▸'}</span>
+                    <span>{p.name}</span>
+                    <span className="pillar-bar"><span style={{ width: `${p.score}%` }} className={p.score >= 80 ? 'good' : p.score >= 50 ? 'warn' : 'bad'} /></span>
+                    <span className="pillar-score">{p.score}</span>
+                  </button>
+                  {open && (
+                    <ul className="criteria">
+                      {p.criteria.map((c) => (
+                        <li key={c.label}>
+                          <div>
+                            <strong>{c.label}</strong> <span className={c.score >= 80 ? 'tone-good' : c.score >= 50 ? 'tone-warn' : 'tone-bad'}>{c.score}/100</span>
+                            {c.locked && <span className="locked-tag">🔒 not fixable yet</span>}
+                          </div>
+                          <div className="muted">{c.detail}</div>
+                          {c.tip && <div className="tip">💡 {c.locked ? `Later: ${c.tip}` : c.tip}</div>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </>
       )}

@@ -12,7 +12,34 @@ export interface Criterion {
   label: string;
   score: number;
   detail: string;
+  /** How to score better, shown when the score is low. */
+  tip?: string;
+  /** Can't be improved yet with what the player has unlocked. */
+  locked?: boolean;
 }
+
+/** How to improve each criterion. */
+const TIPS: Record<string, string> = {
+  'Operational overhead': 'Move off physical hardware and let AWS run the data center.',
+  'Monitoring and alarms': 'Add CloudWatch Alarms early in the mission.',
+  'Incident decisions': 'Ask who manages each layer: AWS runs the hardware; you run what you put on it.',
+  'Physical security': 'Move off physical hardware. AWS secures its data centers for you.',
+  'Root user protected with MFA': 'Enable MFA on the root user in Trusted Advisor.',
+  'Least-privilege network access': 'Untick “allow SSH from 0.0.0.0/0” on every server.',
+  'No security incidents': 'Close ports you don’t need, protect the root user, and patch what you’re responsible for.',
+  Availability: 'Add capacity before traffic peaks, and watch the Load bars.',
+  'Survived the AZ outage': 'Spread servers across two Availability Zones and turn on Multi-AZ for databases.',
+  'No single points of failure': 'Run at least two of everything, in different Availability Zones.',
+  Latency: 'Serve customers from nearby edge locations with CloudFront.',
+  'Served from edge locations': 'Put CloudFront in front of your origins.',
+  'Paying only for what you use': 'Avoid servers that sit mostly idle: buy fewer, pick smaller sizes, or let Auto Scaling match demand.',
+  'Profit margin': 'Cut idle resources, and keep the store up so customers keep buying.',
+  'Minimal idle capacity': 'Avoid servers that sit mostly idle: buy fewer, pick smaller sizes, or let Auto Scaling match demand.',
+  'Managed and shared infrastructure': 'Prefer managed services (S3, RDS, CloudFront) over servers you run yourself.',
+};
+
+/** Criteria that only improve by leaving physical hardware behind. */
+const NEEDS_CLOUD = new Set(['Operational overhead', 'Physical security', 'Managed and shared infrastructure']);
 
 export interface PillarResult {
   name: string;
@@ -196,7 +223,11 @@ export function buildReport(s: SimState, ch: ChapterDef): Report {
     ['Cost Optimization', cost],
     ['Sustainability', sustainability],
   ].map(([name, criteria]) => {
-    const list = criteria as Criterion[];
+    const list = (criteria as Criterion[]).map((c) => ({
+      ...c,
+      tip: c.score < 80 ? TIPS[c.label] : undefined,
+      locked: onprem && NEEDS_CLOUD.has(c.label),
+    }));
     return { name: name as string, criteria: list, score: clamp(list.reduce((sum, c) => sum + c.score, 0) / list.length) };
   });
   const overall = clamp(pillars.reduce((sum, p) => sum + p.score, 0) / pillars.length);

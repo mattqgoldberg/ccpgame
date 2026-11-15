@@ -25,8 +25,10 @@ export function Coach() {
     );
   }
 
-  return (
-    <div className={`coach ${boss ? 'coach-boss' : 'coach-guide'}`}>
+  // Read-and-continue messages take the center of the screen; tasks dock at the bottom so the map stays usable.
+  const centered = !step.done && !step.highlight;
+  const card = (
+    <div key={step.id} className={`coach ${boss ? 'coach-boss' : 'coach-guide'} ${centered ? 'coach-center' : 'coach-dock'}`}>
       <div className="coach-head">
         <span className="avatar">{boss ? 'MR' : '🧭'}</span>
         <div>
@@ -58,4 +60,5 @@ export function Coach() {
       </div>
     </div>
   );
+  return centered ? <div className="coach-overlay">{card}</div> : card;
 }

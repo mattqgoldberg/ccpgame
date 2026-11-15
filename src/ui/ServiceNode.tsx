@@ -1,6 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { useTut } from '../game/store';
-import { CATALOG, SIZES } from '../sim/catalog';
+import { CATALOG, SIZES, nodeCapacity } from '../sim/catalog';
 import { azName } from '../sim/engine';
 import type { NodeMetrics, SimNode, Traffic } from '../sim/types';
 import { compact } from './format';
@@ -48,7 +48,8 @@ export function ServiceNode({ data, selected }: NodeProps<ServiceRFNode>) {
   const tut = useTut(`node-${node.kind}`);
   const hasTarget = def.behavior !== 'source' && def.behavior !== 'monitor';
   const hasSource = def.connectsTo.length > 0;
-  const limited = metrics && metrics.capacity > 0;
+  const capacity = metrics?.capacity ?? nodeCapacity(node);
+  const limited = Number.isFinite(capacity) && capacity > 0;
   const overloaded = !!metrics && limited && metrics.load > metrics.capacity;
   const status = metrics?.down ? 'down' : overloaded || metrics?.warning ? 'hot' : 'ok';
   const util = metrics?.utilization ?? 0;
@@ -64,9 +65,13 @@ export function ServiceNode({ data, selected }: NodeProps<ServiceRFNode>) {
         ) : (
           <div className="svc-sub">{subtitle(node)}</div>
         )}
-        {limited && !metrics.down && (
-          <div className="meter" title={`${Math.round(util * 100)}% utilized`}>
-            <div className={`meter-fill ${util >= 0.95 ? 'crit' : util >= 0.7 ? 'warn' : ''}`} style={{ width: `${Math.min(100, util * 100)}%` }} />
+        {limited && !metrics?.down && (
+          <div className="meter-row" title="How busy this service is. Red means it’s full and requests are failing.">
+            <span className="meter-label">Load</span>
+            <div className="meter">
+              <div className={`meter-fill ${util >= 0.95 ? 'crit' : util >= 0.7 ? 'warn' : ''}`} style={{ width: `${Math.min(100, util * 100)}%` }} />
+            </div>
+            <span className="meter-pct">{Math.round(util * 100)}%</span>
           </div>
         )}
         {metrics?.down && <div className="svc-alert">⛔ {metrics.downReason}</div>}

@@ -10,6 +10,33 @@ export interface BoardQuestion {
 
 export const QUESTIONS: BoardQuestion[] = [
   {
+    id: 'q-guess-capacity',
+    prompt: 'During the rush we had to buy a server days in advance, without knowing how much traffic would really come. What is this problem called?',
+    options: ['Guessing capacity', 'Shared responsibility', 'High latency', 'Data residency'],
+    answer: 0,
+    explanation: 'With your own hardware, you have to guess how much capacity you’ll need. One of the cloud’s big advantages is that you can stop guessing and add or remove capacity in minutes.',
+    codexIds: [],
+    reward: 300,
+  },
+  {
+    id: 'q-dns',
+    prompt: 'Which AWS service is a DNS service that turns domain names into addresses computers can use?',
+    options: ['Amazon S3', 'Amazon Route 53', 'Amazon CloudFront', 'AWS Shield'],
+    answer: 1,
+    explanation: 'Amazon Route 53 is AWS’s highly available DNS service. It can also register domain names and route users based on health checks, latency, or location.',
+    codexIds: ['route53'],
+    reward: 150,
+  },
+  {
+    id: 'q-cache',
+    prompt: 'Which AWS service keeps frequently read data in memory to take load off a database?',
+    options: ['Amazon ElastiCache', 'Amazon S3 Glacier', 'AWS Snowball', 'Amazon Route 53'],
+    answer: 0,
+    explanation: 'Amazon ElastiCache is a managed in-memory cache (Redis-compatible or Memcached). Answering repeat reads from memory cuts database load and latency.',
+    codexIds: ['elasticache'],
+    reward: 300,
+  },
+  {
     id: 'q-benefits',
     prompt: 'An investor asks why other startups use the cloud instead of buying servers. Which is an advantage of the AWS Cloud?',
     options: [

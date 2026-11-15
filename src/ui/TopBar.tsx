@@ -23,6 +23,8 @@ export function TopBar() {
     { value: 1, label: '▶ Play', show: f.has('play') },
     { value: 2, label: '2×', show: f.has('speed-2x') },
     { value: 4, label: '4×', show: f.has('speed-4x') },
+    { value: 8, label: '8×', show: f.has('speed-8x') },
+    { value: 16, label: '16×', show: f.has('speed-16x') },
   ];
 
   return (

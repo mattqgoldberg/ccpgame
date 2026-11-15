@@ -6,7 +6,6 @@ import {
   ReactFlow,
   useReactFlow,
   type Connection,
-  type Edge,
   type EdgeChange,
   type IsValidConnection,
   type NodeChange,
@@ -14,16 +13,18 @@ import {
 import { useFeatures, useGame } from '../game/store';
 import { canConnect } from '../sim/catalog';
 import type { ServiceKind } from '../sim/types';
-import { compact } from './format';
+import { FlowEdge, type FlowRFEdge } from './FlowEdge';
 import { ServiceNode, type ServiceRFNode } from './ServiceNode';
 
 const nodeTypes = { service: ServiceNode };
+const edgeTypes = { flow: FlowEdge };
 export const DRAG_TYPE = 'application/x-cloud-service';
 
 export function Canvas() {
   const sim = useGame((s) => s.sim)!;
   const selectedId = useGame((s) => s.selectedId);
-  const { moveNode, select, removeNode, removeEdge, connect, addService } = useGame.getState();
+  const selectedEdgeId = useGame((s) => s.selectedEdgeId);
+  const { moveNode, select, selectEdge, removeNode, removeEdge, connect, addService } = useGame.getState();
   const { screenToFlowPosition } = useReactFlow();
   const features = useFeatures();
   const canConnectNodes = features.has('connect');
@@ -49,23 +50,24 @@ export function Canvas() {
     [sim, selectedId, canDelete, canConnectNodes, showSsh],
   );
 
-  const edges = useMemo<Edge[]>(
-    () =>
-      sim.edges.map((e) => {
-        const flow = sim.last.edges[e.id] ?? 0;
-        return {
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          deletable: canDelete,
-          animated: flow > 0.05,
-          label: flow > 0.05 ? `${compact(flow)}/s` : undefined,
-          style: { strokeWidth: 1.5 + Math.min(4, Math.log10(1 + flow)) },
-          markerEnd: { type: MarkerType.ArrowClosed },
-        };
-      }),
-    [sim, canDelete],
-  );
+  const edges = useMemo<FlowRFEdge[]>(() => {
+    const kind = (id: string) => sim.nodes.find((n) => n.id === id)?.kind;
+    return sim.edges.map((e) => {
+      const flow = sim.last.edges[e.id] ?? 0;
+      return {
+        id: e.id,
+        type: 'flow',
+        source: e.source,
+        target: e.target,
+        selected: e.id === selectedEdgeId,
+        deletable: canDelete,
+        animated: flow > 0.05,
+        data: { flow, tutKey: `edge-${kind(e.source)}-${kind(e.target)}` },
+        style: { strokeWidth: 2 + Math.min(4, Math.log10(1 + flow)) },
+        markerEnd: { type: MarkerType.ArrowClosed },
+      };
+    });
+  }, [sim, canDelete, selectedEdgeId]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<ServiceRFNode>[]) => {
@@ -79,10 +81,13 @@ export function Canvas() {
   );
 
   const onEdgesChange = useCallback(
-    (changes: EdgeChange[]) => {
-      for (const c of changes) if (c.type === 'remove') removeEdge(c.id);
+    (changes: EdgeChange<FlowRFEdge>[]) => {
+      for (const c of changes) {
+        if (c.type === 'remove') removeEdge(c.id);
+        else if (c.type === 'select' && c.selected) selectEdge(c.id);
+      }
     },
-    [removeEdge],
+    [removeEdge, selectEdge],
   );
 
   const onConnect = useCallback((c: Connection) => connect(c.source, c.target), [connect]);
@@ -111,6 +116,8 @@ export function Canvas() {
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
+      onEdgeClick={(_, e) => selectEdge(e.id)}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
@@ -122,6 +129,7 @@ export function Canvas() {
         e.dataTransfer.dropEffect = 'copy';
       }}
       deleteKeyCode={canDelete ? ['Backspace', 'Delete'] : null}
+      elementsSelectable
       nodesConnectable={canConnectNodes}
       edgesFocusable={canDelete}
       colorMode="dark"

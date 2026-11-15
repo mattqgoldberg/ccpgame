@@ -7,7 +7,7 @@ import { buildReport, type Report } from '../sim/report';
 import type { NodeConfig, ServiceKind, SimState } from '../sim/types';
 import { clearProgress, loadProgress, saveProgress, type Progress } from './progress';
 
-export type Speed = 0 | 1 | 2 | 4;
+export type Speed = 0 | 1 | 2 | 4 | 8 | 16;
 
 /** Game hours simulated per real second at 1× speed. */
 export const TICKS_PER_SECOND = 2;
@@ -24,6 +24,7 @@ interface GameStore {
   stepDone: boolean;
   coachOpen: boolean;
   selectedId: string | null;
+  selectedEdgeId: string | null;
   tab: Tab;
   toast: { id: number; text: string } | null;
   progress: Progress;
@@ -34,9 +35,11 @@ interface GameStore {
   setSpeed: (speed: Speed) => void;
   setTab: (tab: Tab) => void;
   select: (id: string | null) => void;
+  selectEdge: (id: string | null) => void;
   nextStep: () => void;
   setCoachOpen: (open: boolean) => void;
-  tick: () => void;
+  /** Advances up to `hours` game hours, stopping early when something needs the player's attention. */
+  tick: (hours?: number) => void;
   addService: (kind: ServiceKind, position: { x: number; y: number }) => void;
   removeNode: (id: string) => void;
   connect: (source: string, target: string) => void;
@@ -118,15 +121,31 @@ export const useGame = create<GameStore>((set, get) => {
     const step = currentStep(st);
     if (!step || st.stepDone || !step.done || !st.sim) return;
     if (!step.done({ sim: st.sim, ui: { selectedId: st.selectedId, tab: st.tab, speed: st.speed } })) return;
+    const last = st.mission!.steps.at(-1) === step;
     if (step.auto) advance();
-    else set({ stepDone: true, speed: 0, coachOpen: true });
+    else if (step.clock && !last) {
+      // "Run until…" steps hand straight over to whatever happens next, paused so the player reads it.
+      set({ speed: 0 });
+      advance();
+    } else set({ stepDone: true, speed: 0, coachOpen: true });
   }
 
   function advance() {
     const { mission, stepIndex } = get();
     if (!mission) return;
-    set({ stepIndex: Math.min(stepIndex + 1, mission.steps.length), stepDone: false, coachOpen: true });
+    const next = Math.min(stepIndex + 1, mission.steps.length);
+    set({ stepIndex: next, stepDone: false, coachOpen: true });
+    unlockStepCodex();
     evaluate();
+  }
+
+  function unlockStepCodex() {
+    const { sim, mission, stepIndex } = get();
+    const ids = mission?.steps[stepIndex]?.codex;
+    if (!sim || !mission || !ids?.length) return;
+    const next = structuredClone(sim);
+    engine.unlockCodex(next, ids);
+    commit(next, mission);
   }
 
   return {
@@ -140,6 +159,7 @@ export const useGame = create<GameStore>((set, get) => {
     stepDone: false,
     coachOpen: true,
     selectedId: null,
+    selectedEdgeId: null,
     tab: 'inspect',
     toast: null,
     progress: loadProgress(),
@@ -152,9 +172,10 @@ export const useGame = create<GameStore>((set, get) => {
       engine.unlockCodex(sim, mission.codexOnStart);
       set({
         screen: 'game', missionIdx: idx, mission, sim: null, report: null, speed: 0,
-        stepIndex: 0, stepDone: false, coachOpen: true, selectedId: null, tab: 'inspect',
+        stepIndex: 0, stepDone: false, coachOpen: true, selectedId: null, selectedEdgeId: null, tab: 'inspect',
       });
       commit(sim, mission);
+      unlockStepCodex();
     },
     exitToMenu: () => set({ screen: 'menu', sim: null, mission: null, report: null, speed: 0 }),
     resetProgress: () => set({ progress: clearProgress() }),
@@ -174,8 +195,11 @@ export const useGame = create<GameStore>((set, get) => {
       evaluate();
     },
     select: (id) => {
-      set((st) => ({ selectedId: id, tab: id && featuresOf(st).has('tab-inspect') ? 'inspect' : st.tab }));
+      set((st) => ({ selectedId: id, selectedEdgeId: null, tab: id && featuresOf(st).has('tab-inspect') ? 'inspect' : st.tab }));
       evaluate();
+    },
+    selectEdge: (id) => {
+      set((st) => ({ selectedEdgeId: id, selectedId: null, tab: id && featuresOf(st).has('tab-inspect') ? 'inspect' : st.tab }));
     },
     nextStep: () => {
       const st = get();
@@ -185,10 +209,19 @@ export const useGame = create<GameStore>((set, get) => {
     },
     setCoachOpen: (coachOpen) => set({ coachOpen }),
 
-    tick: () => {
+    tick: (hours = 1) => {
       const st = get();
       if (!st.sim || st.sim.finished || st.sim.notices.length || !clockAllowed(st)) return;
-      mutate((s, m) => engine.step(s, m));
+      const step = currentStep(st);
+      const ui = { selectedId: st.selectedId, tab: st.tab, speed: st.speed };
+      mutate((s, m) => {
+        const alerts = s.alerts.length;
+        for (let i = 0; i < hours; i++) {
+          engine.step(s, m);
+          if (s.finished || s.notices.length || s.alerts.length > alerts) break;
+          if (step?.clock && step.done?.({ sim: s, ui })) break;
+        }
+      });
     },
     addService: (kind, position) =>
       mutate((s, m) => {
@@ -201,7 +234,10 @@ export const useGame = create<GameStore>((set, get) => {
       mutate((s) => engine.removeNode(s, id));
     },
     connect: (source, target) => mutate((s) => engine.connect(s, source, target)),
-    removeEdge: (id) => mutate((s) => engine.removeEdge(s, id)),
+    removeEdge: (id) => {
+      if (get().selectedEdgeId === id) set({ selectedEdgeId: null });
+      mutate((s) => engine.removeEdge(s, id));
+    },
     moveNode: (id, position) => mutate((s) => engine.moveNode(s, id, position)),
     configure: (id, patch) => mutate((s) => engine.updateConfig(s, id, patch)),
     enableRootMfa: () => mutate((s) => engine.enableRootMfa(s)),

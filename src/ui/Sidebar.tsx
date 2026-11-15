@@ -184,14 +184,42 @@ function NodeConfigFields({ node }: { node: SimNode }) {
   );
 }
 
+function EdgePanel({ edgeId }: { edgeId: string }) {
+  const sim = useGame((s) => s.sim)!;
+  const removeEdge = useGame((s) => s.removeEdge);
+  const canDelete = useFeatures().has('delete');
+  const edge = sim.edges.find((e) => e.id === edgeId);
+  if (!edge) return null;
+  const name = (id: string) => {
+    const n = sim.nodes.find((x) => x.id === id);
+    return n ? CATALOG[n.kind].name : '?';
+  };
+  return (
+    <>
+      <h4>Connection</h4>
+      <p>
+        <strong>{name(edge.source)}</strong> → <strong>{name(edge.target)}</strong>
+      </p>
+      <p className="small muted">Requests flow along connections in the direction of the arrow. Right now: {compact(sim.last.edges[edge.id] ?? 0)} requests per second.</p>
+      {canDelete && (
+        <button className="danger-btn" onClick={() => removeEdge(edge.id)}>
+          Delete connection
+        </button>
+      )}
+    </>
+  );
+}
+
 function InspectPanel() {
   const sim = useGame((s) => s.sim)!;
   const selectedId = useGame((s) => s.selectedId);
+  const selectedEdgeId = useGame((s) => s.selectedEdgeId);
   const removeNode = useGame((s) => s.removeNode);
   const canDelete = useFeatures().has('delete');
   const metricsTut = useTut('inspect-metrics');
   const node = sim.nodes.find((n) => n.id === selectedId);
-  if (!node) return <p className="muted">Select a service on the canvas to configure it.</p>;
+  if (selectedEdgeId) return <EdgePanel edgeId={selectedEdgeId} />;
+  if (!node) return <p className="muted">Click a service or a connection on the map to see its details.</p>;
   const def = CATALOG[node.kind];
   const m = sim.last.nodes[node.id];
   const capacity = m?.capacity ?? (Number.isFinite(nodeCapacity(node)) ? nodeCapacity(node) : 0);

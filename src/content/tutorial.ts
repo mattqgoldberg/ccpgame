@@ -6,6 +6,8 @@ export type Feature =
   | 'play'
   | 'speed-2x'
   | 'speed-4x'
+  | 'speed-8x'
+  | 'speed-16x'
   | 'stat-cash'
   | 'stat-traffic'
   | 'stat-latency'
@@ -76,11 +78,13 @@ export interface Step {
   success?: string;
   /** Features revealed when this step starts. */
   unlock?: Feature[];
-  /** `data-tut` key of the element to pulse. */
+  /** `data-tut` key of the element to pulse. Connections use `edge-<from kind>-<to kind>`. */
   highlight?: string;
+  /** Codex entries this step teaches, unlocked when it starts. */
+  codex?: string[];
   /** Time may pass during this step. Otherwise the clock is frozen while the player builds. */
   clock?: boolean;
-  /** Move straight to the next step once done, without pausing. */
+  /** Move straight to the next step once done, without pausing. (Clock steps always move on by themselves, with a pause.) */
   auto?: boolean;
   solve?: (a: SolveApi) => void;
 }

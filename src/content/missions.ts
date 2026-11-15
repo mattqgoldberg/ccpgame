@@ -60,7 +60,7 @@ const firstDay: Mission = {
       id: 'read-inspector', title: 'Reading the inspector', highlight: 'inspect-metrics',
       body: [
         'Load is how much work the server is doing right now. Capacity is the most it can handle: about 25 requests per second for this one.',
-        'If load goes over capacity, the extra requests fail and customers see errors. The bar on the server shows how close it is.',
+        'On the map, the bar labeled “Load” on the server fills up as it gets busier. Green is fine, yellow is busy, and red means it’s full and extra requests are failing.',
       ],
     },
     {
@@ -80,20 +80,22 @@ const firstDay: Mission = {
       ],
       task: 'Let one full day go by.',
       done: hourAtLeast(DAY), clock: true,
-      success: 'That’s a normal day: busy evening, quiet morning.',
     },
     {
       id: 'money', title: 'Keeping score', unlock: ['stat-cash', 'stat-traffic'], highlight: 'stat-cash',
       body: [
-        'Two numbers just appeared at the top.',
+        'That was a normal day: busy evening, quiet morning. Two numbers just appeared at the top.',
         'Cash is the company’s money. Every order earns a little; electricity and the internet line for the closet cost a little.',
         'Traffic is requests per second, plus the percentage we served successfully. 100% means nobody saw an error.',
       ],
     },
     {
-      id: 'finish', speaker: 'guide', title: 'Pause anytime', highlight: 'play',
-      body: ['You can pause whenever you like with the ⏸ button or the Space bar. Use it to look around or think.'],
-      task: 'Press Play and finish the week.',
+      id: 'finish', speaker: 'guide', title: 'Speed it up', highlight: 'play', unlock: ['speed-2x', 'speed-4x'],
+      body: [
+        'You can now run time at 2× or 4× speed. Pause whenever you like with ⏸ or the Space bar.',
+        'Things pause on their own when something happens, so it’s safe to go fast.',
+      ],
+      task: 'Press 4× and finish the week.',
       done: missionOver, clock: true,
     },
   ],
@@ -123,7 +125,7 @@ const theRush: Mission = {
         'Owning hardware means guessing capacity in advance. Guess low and customers get errors. Guess high and expensive servers sit idle for the rest of the year.',
       ],
     },
-    { id: 'rush-board', at: 16 * DAY, kind: 'board', questionId: 'q-benefits' },
+    { id: 'rush-board', at: 16 * DAY, kind: 'board', questionId: 'q-guess-capacity' },
   ],
   steps: [
     {
@@ -143,8 +145,8 @@ const theRush: Mission = {
       ],
     },
     {
-      id: 'run-1', speaker: 'guide', title: 'Business as usual', highlight: 'play',
-      body: ['Run the store for a few days.'],
+      id: 'run-1', speaker: 'guide', title: 'Business as usual', highlight: 'play', unlock: ['speed-8x'],
+      body: ['Run the store for a few days. 8× speed is unlocked for quiet stretches like this.'],
       task: 'Press Play and run until Morgan has news.',
       done: hourAtLeast(5 * DAY), clock: true,
     },
@@ -175,17 +177,17 @@ const theRush: Mission = {
       solve: (a) => a.link('users', 'server2'),
     },
     {
-      id: 'run-2', speaker: 'guide', title: 'Ride the wave', unlock: ['speed-2x', 'chart', 'report-card'], highlight: 'chart',
+      id: 'run-2', speaker: 'guide', title: 'Ride the wave', unlock: ['speed-16x', 'chart', 'report-card'], highlight: 'chart',
       body: [
-        'You can now run time at 2× speed.',
-        'The Goals tab has a chart of demand versus requests served. If the lines split apart, customers are getting errors.',
+        'The Goals tab now has a chart of demand versus requests served. If the lines split apart, customers are getting errors.',
+        '16× speed is unlocked too. The game still pauses when something happens.',
       ],
       task: 'Run until the end of the month.',
       done: missionOver, clock: true,
     },
   ],
   teachReport: true,
-  codexOnStart: [], codexOnComplete: ['six-benefits', 'capex-opex', 'agility'],
+  codexOnStart: [], codexOnComplete: [],
   outro: [
     'We survived the rush. But look at what it cost: two servers, and for most of the month the second one sat idle.',
     'That’s the problem with owning hardware. You pay up front, wait days for it, and have to guess how much you’ll need.',
@@ -203,7 +205,10 @@ const helloAws: Mission = {
   revenue: { static: 0.0001, dynamic: 0 },
   latencyTargetMs: 150, requireDns: false, freeTier: true, cloud: true, strikes: true,
   objectives: [{ kind: 'availability', label: 'Serve 99% of blog requests', target: 0.99 }],
-  events: [],
+  events: [
+    { id: 'h-board', at: 2 * DAY, kind: 'board', questionId: 'q-benefits' },
+    { id: 'h-board-2', at: 5 * DAY, kind: 'board', questionId: 'q-static-hosting' },
+  ],
   hide: ['svc:onprem'],
   steps: [
     {
@@ -211,6 +216,24 @@ const helloAws: Mission = {
       body: [
         'The closet is full, and buying servers was painful. So I’ve opened an account with Amazon Web Services (AWS). We rent what we need, by the hour, and AWS runs the data centers.',
         'Let’s start small: a blog with hiking guides to bring in new customers. The store stays in the closet for now.',
+      ],
+    },
+    {
+      id: 'why-cloud', title: 'Why the cloud?', codex: ['capex-opex', 'agility'],
+      body: [
+        'Remember the rush? We paid $2,500 up front, waited three days, guessed how big the spike would be, and then the server sat idle. With AWS:',
+        '• Pay as you go. We rent by the hour instead of buying up front. That trades a fixed (capital) expense for a variable one.',
+        '• Stop guessing capacity. Add servers in minutes when it’s busy, and turn them off when it’s quiet.',
+        '• Speed. New resources take minutes, not days, so we can try ideas quickly.',
+      ],
+    },
+    {
+      id: 'why-cloud-2', title: 'And a few more reasons', codex: ['six-benefits'],
+      body: [
+        '• Economies of scale. AWS buys hardware for millions of customers, so it costs far less per server than anything we could buy.',
+        '• No more data center chores. AWS handles the power, cooling, and broken disks. No more grinding noises in my closet.',
+        '• Go global in minutes. AWS has data centers all over the world.',
+        'Those are the six advantages of cloud computing. They come up a lot on the AWS Cloud Practitioner exam, and investors love to ask about them.',
       ],
     },
     {
@@ -278,7 +301,7 @@ const findUs: Mission = {
     { kind: 'served', label: 'Serve 4 million page views', target: 4_000_000 },
     { kind: 'availability', label: 'Serve 99% of requests', target: 0.99 },
   ],
-  events: [],
+  events: [{ id: 'f-board', at: 6 * DAY, kind: 'board', questionId: 'q-dns' }],
   hide: ['svc:onprem'],
   steps: [
     {
@@ -294,9 +317,10 @@ const findUs: Mission = {
       done: has('route53'), solve: (a) => a.add('route53'),
     },
     {
-      id: 'delete', speaker: 'guide', title: 'Out with the old', unlock: ['delete'],
+      id: 'delete', speaker: 'guide', title: 'Out with the old', unlock: ['delete'], highlight: 'edge-users-s3',
       body: ['Customers should look up our name in Route 53 first, so the direct connection has to go.'],
-      task: 'Click the line from Customers to S3, then press Delete (or Backspace).',
+      task: 'Click the line from Customers to S3 to select it, then click the ✕ that appears on it.',
+      why: 'You can also press Delete or Backspace, or use “Delete connection” in the Inspect tab.',
       done: unlinked('users', 's3'), success: 'Connection removed.',
       solve: (a) => a.unlink('users', 's3'),
     },
@@ -355,7 +379,6 @@ const aroundTheWorld: Mission = {
     { kind: 'cash', label: 'Don’t lose money (finish with $500+)', target: 500 },
   ],
   events: [
-    { id: 'w-board', at: 4 * DAY, kind: 'board', questionId: 'q-static-hosting' },
     {
       id: 'w-spike', at: 8 * DAY + 10, kind: 'traffic-spike', multiplier: 4, duration: 18,
       title: 'A guide went viral!',
@@ -382,7 +405,7 @@ const aroundTheWorld: Mission = {
       done: has('cloudfront'), solve: (a) => a.add('cloudfront'),
     },
     {
-      id: 'wire', speaker: 'guide', title: 'Put CloudFront in front',
+      id: 'wire', speaker: 'guide', title: 'Put CloudFront in front', highlight: 'edge-route53-s3',
       body: ['Route 53 should send readers to CloudFront. CloudFront fetches anything it doesn’t have yet from S3, which is called the origin.'],
       task: 'Make it Route 53 → CloudFront → S3 Bucket, and delete the direct Route 53 → S3 line.',
       done: all(linked('route53', 'cloudfront'), linked('cloudfront', 's3'), unlinked('route53', 's3')),
@@ -394,11 +417,8 @@ const aroundTheWorld: Mission = {
       },
     },
     {
-      id: 'run', speaker: 'guide', title: 'Faster', unlock: ['speed-4x'], highlight: 'play',
-      body: [
-        '4× speed is unlocked.',
-        'Some things will happen this month. The game pauses for each one, so take your time.',
-      ],
+      id: 'run', speaker: 'guide', title: 'Launch the edge', highlight: 'play',
+      body: ['Some things will happen this month. The game pauses for each one, so take your time.'],
       task: 'Run until the end of the mission.',
       done: missionOver, clock: true,
     },
@@ -440,6 +460,7 @@ const movingTheStore: Mission = {
       ],
       codexIds: ['shield'],
     },
+    { id: 'm-board', at: 5 * DAY, kind: 'board', questionId: 'q-shield' },
   ],
   hide: ['svc:onprem'],
   steps: [
@@ -592,7 +613,7 @@ const realServers: Mission = {
       done: has('ec2'), solve: (a) => a.add('ec2', 'web'),
     },
     {
-      id: 'ssh', speaker: 'guide', title: 'Check the firewall', unlock: ['config-ssh'], highlight: 'inspect-ssh',
+      id: 'ssh', speaker: 'guide', title: 'Check the firewall', unlock: ['config-ssh'], highlight: 'inspect-ssh', codex: ['security-groups'],
       body: [
         'See the 🔓 warning on the instance? Its security group (the instance’s firewall) lets anyone on the internet try to log in over SSH, on port 22.',
         'Customers only need web traffic, and that arrives through CloudFront.',
@@ -777,7 +798,6 @@ const goingViral: Mission = {
     { kind: 'cash', label: 'Finish with at least $1,500', target: 1500 },
   ],
   events: [
-    { id: 'v-board', at: 4 * DAY, kind: 'board', questionId: 'q-elasticity' },
     {
       id: 'v-spike', at: 8 * DAY + 12, kind: 'traffic-spike', multiplier: 3, duration: 60,
       title: 'The video dropped',
@@ -785,6 +805,7 @@ const goingViral: Mission = {
       debrief: ['Elasticity means capacity follows demand automatically: up for the rush, back down after, so you only pay for what you use.'],
       codexIds: ['elasticity'],
     },
+    { id: 'v-board', at: 11 * DAY + 6, kind: 'board', questionId: 'q-elasticity' },
     {
       id: 'v-flood', at: 15 * DAY + 18, kind: 'http-flood', rps: 3000, duration: 6,
       debrief: [
@@ -793,7 +814,7 @@ const goingViral: Mission = {
       ],
       codexIds: ['shield', 'cloudfront'],
     },
-    { id: 'v-board-2', at: 17 * DAY, kind: 'board', questionId: 'q-shield' },
+    { id: 'v-board-2', at: 17 * DAY, kind: 'board', questionId: 'q-cache' },
   ],
   hide: ['svc:onprem'],
   steps: [

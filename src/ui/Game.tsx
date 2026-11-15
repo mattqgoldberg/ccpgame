@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { servicesIn } from '../content/tutorial';
-import { TICKS_PER_SECOND, clockAllowed, featuresOf, useFeatures, useGame } from '../game/store';
+import { TICKS_PER_SECOND, clockAllowed, featuresOf, useFeatures, useGame, type Speed } from '../game/store';
 import { Canvas } from './Canvas';
 import { Coach } from './Coach';
 import { NoticeModal, ReportModal } from './Modals';
@@ -23,15 +23,25 @@ export function Game() {
   const running = speed > 0 && canRun && !notice && !finished;
   useSoundEffects();
 
+  // Fixed frame rate; faster speeds simulate more hours per frame instead of rendering more often.
   useEffect(() => {
     if (!running) return;
-    const id = setInterval(() => useGame.getState().tick(), 1000 / (TICKS_PER_SECOND * speed));
+    const FRAME_MS = 100;
+    let owed = 0;
+    const id = setInterval(() => {
+      owed += (TICKS_PER_SECOND * speed * FRAME_MS) / 1000;
+      const hours = Math.floor(owed);
+      if (hours > 0) {
+        owed -= hours;
+        useGame.getState().tick(hours);
+      }
+    }, FRAME_MS);
     return () => clearInterval(id);
   }, [running, speed]);
 
   // Space toggles pause, unless typing in a field.
   useEffect(() => {
-    let resume: 1 | 2 | 4 = 1;
+    let resume: Exclude<Speed, 0> = 1;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || (e.target as HTMLElement).closest('input, select, textarea, button')) return;
       const st = useGame.getState();
