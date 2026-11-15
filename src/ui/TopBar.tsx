@@ -3,6 +3,7 @@ import { CHAPTERS } from '../content/chapters';
 import { useFeatures, useGame, useTut, type Speed } from '../game/store';
 import { BOSS } from '../sim/engine';
 import { clock, compact, money, pct } from './format';
+import { setMuted, useMuted } from './sound';
 
 export function TopBar() {
   const sim = useGame((s) => s.sim)!;
@@ -16,6 +17,7 @@ export function TopBar() {
   const success = wanted > 0 ? Math.min(1, sim.last.served / wanted) : 1;
   const net = sim.last.revenue - sim.last.cost;
   const chapter = CHAPTERS.find((c) => c.id === mission.chapter);
+  const muted = useMuted();
 
   const speeds: { value: Speed; label: string; show: boolean }[] = [
     { value: 1, label: '▶ Play', show: f.has('play') },
@@ -58,6 +60,9 @@ export function TopBar() {
         {f.has('stat-satisfaction') && (
           <Stat cls={tut.satisfaction} label="Satisfaction" value={`${Math.round(sim.satisfaction)}`} sub="/ 100" tone={sim.satisfaction >= 60 ? 'good' : sim.satisfaction >= 40 ? 'warn' : 'bad'} />
         )}
+        <button className="ghost mute" onClick={() => setMuted(!muted)} title={muted ? 'Sound off' : 'Sound on'}>
+          {muted ? '🔇' : '🔊'}
+        </button>
       </div>
     </header>
   );

@@ -240,3 +240,4 @@ button.big { font-size: 16px; padding: 10px 20px; margin: 6px 0 12px; }
 .mission-card { text-align: left; padding: 12px; background: var(--panel); border-radius: 10px; }
 .mission-card:hover:not(:disabled) { border-color: var(--accent); }
 .mission-name { font-weight: 600; margin-bottom: 4px; }
+.mute { align-self: center; font-size: 16px; }

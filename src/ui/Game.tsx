@@ -8,6 +8,7 @@ import { NoticeModal, ReportModal } from './Modals';
 import { Palette } from './Palette';
 import { Sidebar, TABS } from './Sidebar';
 import { TopBar } from './TopBar';
+import { useSoundEffects } from './useSoundEffects';
 
 export function Game() {
   const speed = useGame((s) => s.speed);
@@ -20,6 +21,7 @@ export function Game() {
   const hasPalette = servicesIn(features).length > 0;
   const hasSidebar = TABS.some((t) => features.has(t.feature));
   const running = speed > 0 && canRun && !notice && !finished;
+  useSoundEffects();
 
   useEffect(() => {
     if (!running) return;
