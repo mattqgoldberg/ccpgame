@@ -96,6 +96,8 @@ export interface Notice {
   choice?: { eventId: string; options: { label: string }[] };
   /** Optional board-meeting question. */
   questionId?: string;
+  /** The boss handed out a strike. */
+  strike?: { count: number; max: number };
 }
 
 export interface ChapterStats {
@@ -120,7 +122,7 @@ export interface ChapterStats {
 }
 
 export interface SimState {
-  chapterId: number;
+  missionId: string;
   hour: number;
   cash: number;
   /** Customer satisfaction, 0–100. Scales demand. */
@@ -138,6 +140,14 @@ export interface SimState {
   /** Hour each alarm key last fired, to avoid repeats. */
   alarmFiredAt: Record<string, number>;
   flags: { rootMfa: boolean };
+  boss: {
+    enabled: boolean;
+    /** Strikes this month. Three and you're fired. */
+    strikes: number;
+    /** Consecutive hours the site has been failing. */
+    badHours: number;
+    log: { hour: number; reason: string }[];
+  };
   /** Most recent hour's results. */
   last: {
     demand: Traffic;

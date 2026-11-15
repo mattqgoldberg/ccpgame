@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { getChapter } from '../content/campaign';
-import { addNode, connect, createSim, fireEvent, simulateFlow, step, updateConfig } from './engine';
+import { getMission } from '../content/missions';
+import { BOSS, addNode, connect, createSim, fireEvent, simulateFlow, step, updateConfig } from './engine';
 import type { SimState } from './types';
 
-const ch3 = getChapter(3)!;
-const ch0 = getChapter(0)!;
+const ch3 = getMission('3-1')!;
+const viral = getMission('3-2')!;
+const ch0 = getMission('0-2')!;
 
 function lastNode(s: SimState) {
   return s.nodes[s.nodes.length - 1];
@@ -13,7 +14,7 @@ function lastNode(s: SimState) {
 describe('engine', () => {
   it('rejects connections that make no sense', () => {
     const s = createSim(ch3);
-    expect(connect(s, 'bucket', 'web')).toMatch(/can’t send traffic/);
+    expect(connect(s, 'blog', 'web')).toMatch(/can’t send traffic/);
     expect(connect(s, 'web', 'db')).toBeNull();
   });
 
@@ -99,12 +100,67 @@ describe('engine', () => {
   });
 
   it('auto scaling grows with load', () => {
-    const s = createSim(ch3);
-    addNode(s, ch3, 'asg', { x: 0, y: 0 });
+    const s = createSim(viral);
+    addNode(s, viral, 'asg', { x: 0, y: 0 });
     const asg = lastNode(s);
     updateConfig(s, asg.id, { minSize: 1, maxSize: 8, size: 'medium' });
     s.last.nodes[asg.id] = { load: 400, capacity: 80, utilization: 1, down: false, throughput: 80, costPerHour: 0 };
-    step(s, ch3);
+    step(s, viral);
     expect(asg.instances).toBe(8);
+  });
+});
+
+describe('boss strikes', () => {
+  /** Breaks the site: no route from customers to anything. */
+  function broken() {
+    const s = createSim(ch3);
+    s.edges = [];
+    return s;
+  }
+  const runUntilNotice = (s: SimState, mission = ch3) => {
+    for (let i = 0; i < 100 && !s.notices.length && !s.finished; i++) step(s, mission);
+  };
+
+  it(`warns immediately, then strikes after ${BOSS.hoursBeforeStrike} failing hours`, () => {
+    const s = broken();
+    step(s, ch3);
+    expect(s.alerts.at(-1)?.text).toMatch(/Fix it within 3 hours/);
+    expect(s.boss.strikes).toBe(0);
+    runUntilNotice(s);
+    expect(s.hour).toBe(BOSS.hoursBeforeStrike);
+    expect(s.boss.strikes).toBe(1);
+    expect(s.notices[0].strike).toEqual({ count: 1, max: 3 });
+  });
+
+  it('explains what is broken in the strike notice', () => {
+    const s = createSim(ch3);
+    updateConfig(s, 'web', { size: 'small' });
+    s.edges = s.edges.filter((e) => e.id !== 'e-web-db');
+    runUntilNotice(s);
+    expect(s.notices[0].body.join(' ')).toMatch(/No database connected/);
+  });
+
+  it('fires you on the third strike', () => {
+    const s = broken();
+    for (let i = 0; i < 200 && !s.finished; i++) {
+      s.notices = [];
+      step(s, ch3);
+    }
+    expect(s.boss.strikes).toBe(3);
+    expect(s.failed).toMatch(/let you go/);
+  });
+
+  it('gives a strike for a breach', () => {
+    const s = createSim(ch3);
+    updateConfig(s, 'web', { sshOpen: true });
+    fireEvent(s, { id: 'x', kind: 'ssh-bruteforce', duration: 12 });
+    expect(s.boss.strikes).toBe(1);
+  });
+
+  it('has no strikes before the boss introduces them', () => {
+    const s = createSim(getMission('0-1')!);
+    s.edges = [];
+    for (let i = 0; i < 24; i++) step(s, getMission('0-1')!);
+    expect(s.boss.strikes).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
+import { useTut } from '../game/store';
 import { CATALOG, SIZES } from '../sim/catalog';
 import { azName } from '../sim/engine';
 import type { NodeMetrics, SimNode, Traffic } from '../sim/types';
@@ -9,6 +10,10 @@ export type ServiceNodeData = {
   metrics?: NodeMetrics;
   /** Customers node only: current demand. */
   demand?: Traffic;
+  /** Show connection dots (the player has learned to connect things). */
+  connectable: boolean;
+  /** Show the SSH warning (the player has learned about security groups). */
+  showSsh: boolean;
 };
 
 export type ServiceRFNode = Node<ServiceNodeData, 'service'>;
@@ -38,8 +43,9 @@ function subtitle(node: SimNode): string {
 }
 
 export function ServiceNode({ data, selected }: NodeProps<ServiceRFNode>) {
-  const { node, metrics, demand } = data;
+  const { node, metrics, demand, connectable, showSsh } = data;
   const def = CATALOG[node.kind];
+  const tut = useTut(`node-${node.kind}`);
   const hasTarget = def.behavior !== 'source' && def.behavior !== 'monitor';
   const hasSource = def.connectsTo.length > 0;
   const limited = metrics && metrics.capacity > 0;
@@ -48,8 +54,8 @@ export function ServiceNode({ data, selected }: NodeProps<ServiceRFNode>) {
   const util = metrics?.utilization ?? 0;
 
   return (
-    <div className={`svc cat-${def.category} status-${status} ${selected ? 'selected' : ''}`}>
-      {hasTarget && <Handle type="target" position={Position.Left} />}
+    <div className={`svc cat-${def.category} status-${status} ${selected ? 'selected' : ''}${tut}`}>
+      {hasTarget && <Handle type="target" position={Position.Left} className={connectable ? '' : 'hidden-handle'} isConnectable={connectable} />}
       <div className="svc-badge">{def.short}</div>
       <div className="svc-body">
         <div className="svc-name">{def.name}</div>
@@ -66,9 +72,9 @@ export function ServiceNode({ data, selected }: NodeProps<ServiceRFNode>) {
         {metrics?.down && <div className="svc-alert">⛔ {metrics.downReason}</div>}
         {!metrics?.down && overloaded && <div className="svc-alert">⚠ Over capacity</div>}
         {!metrics?.down && metrics?.warning && <div className="svc-alert">⚠ {metrics.warning}</div>}
-        {node.config.sshOpen && <div className="svc-flag">🔓 SSH open to internet</div>}
+        {showSsh && node.config.sshOpen && <div className="svc-flag">🔓 SSH open to internet</div>}
       </div>
-      {hasSource && <Handle type="source" position={Position.Right} />}
+      {hasSource && <Handle type="source" position={Position.Right} className={connectable ? '' : 'hidden-handle'} isConnectable={connectable} />}
     </div>
   );
 }

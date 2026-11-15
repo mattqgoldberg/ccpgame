@@ -35,12 +35,13 @@ export interface Objective {
   target: number;
 }
 
+/** A playable scenario: one mission's world, economy, goals, and scripted events. */
 export interface ChapterDef {
-  id: number;
+  /** Mission id, e.g. "1-2". */
+  id: string;
+  /** Chapter the mission belongs to (see content/chapters.ts). */
+  chapter: number;
   title: string;
-  premise: string;
-  intro: string[];
-  tips: string[];
   lengthHours: number;
   startingCash: number;
   available: ServiceKind[];
@@ -58,6 +59,12 @@ export interface ChapterDef {
   /** Without Route 53 in front, most customers can't find the site. */
   requireDns: boolean;
   freeTier: boolean;
+  /** The company has an AWS account (enables Trusted Advisor and account-security scoring). */
+  cloud: boolean;
+  /** Downtime and breaches earn strikes from the boss. */
+  strikes: boolean;
+  /** Root MFA was already enabled in an earlier mission (same company account). */
+  startsWithMfa?: boolean;
   objectives: Objective[];
   events: GameEvent[];
 }

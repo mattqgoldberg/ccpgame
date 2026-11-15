@@ -117,7 +117,7 @@ export const CATALOG: Record<ServiceKind, ServiceDef> = {
   ec2: {
     kind: 'ec2', name: 'EC2 Instance', short: 'EC2', category: 'compute', behavior: 'compute', codexId: 'ec2',
     connectsTo: ['rds', 'elasticache'], regional: false, latencyMs: 20,
-    defaultConfig: { size: 'medium', az: 'a', sshOpen: true },
+    defaultConfig: { size: 'small', az: 'a', sshOpen: true },
     pricingHint: 'From $0.0208/hr · Free Tier: 750 hrs/mo of Small',
   },
   elb: {

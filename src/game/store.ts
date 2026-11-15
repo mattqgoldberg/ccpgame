@@ -1,35 +1,41 @@
 import { create } from 'zustand';
-import { getChapter, type PlayableChapter } from '../content/campaign';
+import { MISSIONS, missionIndex } from '../content/missions';
 import { getQuestion } from '../content/questions';
+import { featuresAt, type Feature, type Mission, type Step, type Tab } from '../content/tutorial';
 import * as engine from '../sim/engine';
 import { buildReport, type Report } from '../sim/report';
 import type { NodeConfig, ServiceKind, SimState } from '../sim/types';
-import { loadProgress, saveProgress, type Progress } from './progress';
+import { clearProgress, loadProgress, saveProgress, type Progress } from './progress';
 
 export type Speed = 0 | 1 | 2 | 4;
-export type SidebarTab = 'goals' | 'inspect' | 'bill' | 'advisor' | 'codex';
 
 /** Game hours simulated per real second at 1× speed. */
-export const TICKS_PER_SECOND = 4;
+export const TICKS_PER_SECOND = 2;
 
 interface GameStore {
   screen: 'menu' | 'game';
-  chapter: PlayableChapter | null;
+  missionIdx: number;
+  mission: Mission | null;
   sim: SimState | null;
   report: Report | null;
   speed: Speed;
-  showIntro: boolean;
+  stepIndex: number;
+  /** The current step's task has been verified; waiting for the player to press Next. */
+  stepDone: boolean;
+  coachOpen: boolean;
   selectedId: string | null;
-  tab: SidebarTab;
+  tab: Tab;
   toast: { id: number; text: string } | null;
   progress: Progress;
 
-  startChapter: (id: number) => void;
+  startMission: (id: string) => void;
   exitToMenu: () => void;
-  closeIntro: () => void;
+  resetProgress: () => void;
   setSpeed: (speed: Speed) => void;
-  setTab: (tab: SidebarTab) => void;
+  setTab: (tab: Tab) => void;
   select: (id: string | null) => void;
+  nextStep: () => void;
+  setCoachOpen: (open: boolean) => void;
   tick: () => void;
   addService: (kind: ServiceKind, position: { x: number; y: number }) => void;
   removeNode: (id: string) => void;
@@ -44,88 +50,171 @@ interface GameStore {
   showToast: (text: string) => void;
 }
 
+export function currentStep(st: Pick<GameStore, 'mission' | 'stepIndex'>): Step | undefined {
+  return st.mission?.steps[st.stepIndex];
+}
+
+export function featuresOf(st: Pick<GameStore, 'missionIdx' | 'stepIndex' | 'mission'>): Set<Feature> {
+  if (!st.mission) return new Set();
+  return featuresAt(MISSIONS, st.missionIdx, Math.min(st.stepIndex, st.mission.steps.length - 1));
+}
+
+/** Time may pass: the current step lets the clock run and isn't finished yet. */
+export function clockAllowed(st: Pick<GameStore, 'mission' | 'stepIndex' | 'stepDone'>): boolean {
+  const step = currentStep(st);
+  return !step || (!!step.clock && !st.stepDone);
+}
+
+export function isMissionUnlocked(progress: Progress, id: string): boolean {
+  const i = missionIndex(id);
+  return i === 0 || (progress.stars[MISSIONS[i - 1]?.id] ?? 0) > 0;
+}
+
 export const useGame = create<GameStore>((set, get) => {
   /** Runs `fn` on a copy of the sim, then commits it. A string result is shown as an error toast. */
-  function mutate(fn: (s: SimState, ch: PlayableChapter) => string | null | void) {
-    const { sim, chapter } = get();
-    if (!sim || !chapter) return;
+  function mutate(fn: (s: SimState, m: Mission) => string | null | void) {
+    const { sim, mission } = get();
+    if (!sim || !mission) return;
     const next = structuredClone(sim);
-    const err = fn(next, chapter);
+    const err = fn(next, mission);
     if (typeof err === 'string') {
       get().showToast(err);
       return;
     }
-    commit(next, chapter);
+    commit(next, mission);
   }
 
-  function commit(next: SimState, chapter: PlayableChapter) {
+  function commit(next: SimState, mission: Mission) {
+    const prev = get().sim;
     const progress = get().progress;
-    const newCodex = next.codex.filter((id) => !progress.codex.includes(id));
     let updated = progress;
+    const newCodex = next.codex.filter((id) => !progress.codex.includes(id));
     if (newCodex.length) updated = { ...updated, codex: [...updated.codex, ...newCodex] };
 
     let report = get().report;
     if (next.finished && !report) {
-      report = buildReport(next, chapter);
+      report = buildReport(next, mission);
       if (report.passed) {
-        engine.unlockCodex(next, chapter.codexOnComplete);
-        const codex = [...new Set([...updated.codex, ...chapter.codexOnComplete])];
-        const best = Math.max(updated.stars[chapter.id] ?? 0, report.stars);
-        updated = { ...updated, codex, stars: { ...updated.stars, [chapter.id]: best } };
+        engine.unlockCodex(next, mission.codexOnComplete);
+        const codex = [...new Set([...updated.codex, ...mission.codexOnComplete])];
+        const best = Math.max(updated.stars[mission.id] ?? 0, report.stars);
+        updated = { ...updated, codex, stars: { ...updated.stars, [mission.id]: best } };
       }
     }
     if (updated !== progress) saveProgress(updated);
-    set({ sim: next, report, progress: updated });
+
+    // Pause whenever something happens: a new message, an urgent alert, or the end of the mission.
+    const newNotice = next.notices.length > (prev?.notices.length ?? 0);
+    const newDanger = next.alerts.length > (prev?.alerts.length ?? 0) && next.alerts.at(-1)?.tone === 'danger';
+    const pause = newNotice || newDanger || next.finished;
+    set({ sim: next, report, progress: updated, ...(pause ? { speed: 0 as Speed } : {}) });
+    if (newDanger) get().showToast(`⏸ ${next.alerts.at(-1)!.text}`);
+    evaluate();
+  }
+
+  /** Checks whether the player has completed the current step's task. */
+  function evaluate() {
+    const st = get();
+    const step = currentStep(st);
+    if (!step || st.stepDone || !step.done || !st.sim) return;
+    if (!step.done({ sim: st.sim, ui: { selectedId: st.selectedId, tab: st.tab, speed: st.speed } })) return;
+    if (step.auto) advance();
+    else set({ stepDone: true, speed: 0, coachOpen: true });
+  }
+
+  function advance() {
+    const { mission, stepIndex } = get();
+    if (!mission) return;
+    set({ stepIndex: Math.min(stepIndex + 1, mission.steps.length), stepDone: false, coachOpen: true });
+    evaluate();
   }
 
   return {
     screen: 'menu',
-    chapter: null,
+    missionIdx: 0,
+    mission: null,
     sim: null,
     report: null,
-    speed: 1,
-    showIntro: false,
+    speed: 0,
+    stepIndex: 0,
+    stepDone: false,
+    coachOpen: true,
     selectedId: null,
-    tab: 'goals',
+    tab: 'inspect',
     toast: null,
     progress: loadProgress(),
 
-    startChapter: (id) => {
-      const chapter = getChapter(id);
-      if (!chapter) return;
-      const sim = engine.createSim(chapter, Date.now() % 100_000);
-      engine.unlockCodex(sim, chapter.codexOnStart);
-      set({ screen: 'game', chapter, report: null, speed: 1, showIntro: true, selectedId: null, tab: 'goals' });
-      commit(sim, chapter);
+    startMission: (id) => {
+      const idx = missionIndex(id);
+      const mission = MISSIONS[idx];
+      if (!mission) return;
+      const sim = engine.createSim(mission, Date.now() % 100_000);
+      engine.unlockCodex(sim, mission.codexOnStart);
+      set({
+        screen: 'game', missionIdx: idx, mission, sim: null, report: null, speed: 0,
+        stepIndex: 0, stepDone: false, coachOpen: true, selectedId: null, tab: 'inspect',
+      });
+      commit(sim, mission);
     },
-    exitToMenu: () => set({ screen: 'menu', sim: null, chapter: null, report: null }),
-    closeIntro: () => set({ showIntro: false }),
-    setSpeed: (speed) => set({ speed }),
-    setTab: (tab) => set({ tab }),
-    select: (id) => set((st) => ({ selectedId: id, tab: id ? 'inspect' : st.tab === 'inspect' ? 'goals' : st.tab })),
+    exitToMenu: () => set({ screen: 'menu', sim: null, mission: null, report: null, speed: 0 }),
+    resetProgress: () => set({ progress: clearProgress() }),
+    setSpeed: (speed) => {
+      const st = get();
+      if (speed > 0 && !clockAllowed(st)) {
+        const step = currentStep(st);
+        get().showToast(step?.task ? `First: ${step.task}` : 'Read the message, then press Next.');
+        return;
+      }
+      if (speed > 0 && st.sim?.notices.length) return;
+      set({ speed });
+      evaluate();
+    },
+    setTab: (tab) => {
+      set({ tab });
+      evaluate();
+    },
+    select: (id) => {
+      set((st) => ({ selectedId: id, tab: id && featuresOf(st).has('tab-inspect') ? 'inspect' : st.tab }));
+      evaluate();
+    },
+    nextStep: () => {
+      const st = get();
+      const step = currentStep(st);
+      if (!step || (step.done && !st.stepDone)) return;
+      advance();
+    },
+    setCoachOpen: (coachOpen) => set({ coachOpen }),
 
     tick: () => {
-      const { sim, showIntro } = get();
-      if (!sim || showIntro || sim.finished || sim.notices.length) return;
-      mutate((s, ch) => engine.step(s, ch));
+      const st = get();
+      if (!st.sim || st.sim.finished || st.sim.notices.length || !clockAllowed(st)) return;
+      mutate((s, m) => engine.step(s, m));
     },
     addService: (kind, position) =>
-      mutate((s, ch) => {
-        const err = engine.addNode(s, ch, kind, position);
-        if (!err) set({ selectedId: s.nodes[s.nodes.length - 1].id, tab: 'inspect' });
+      mutate((s, m) => {
+        const err = engine.addNode(s, m, kind, position);
+        if (!err) set({ selectedId: s.nodes[s.nodes.length - 1].id, ...(featuresOf(get()).has('tab-inspect') ? { tab: 'inspect' as Tab } : {}) });
         return err;
       }),
     removeNode: (id) => {
+      if (get().selectedId === id) set({ selectedId: null });
       mutate((s) => engine.removeNode(s, id));
-      if (get().selectedId === id) set({ selectedId: null, tab: 'goals' });
     },
     connect: (source, target) => mutate((s) => engine.connect(s, source, target)),
     removeEdge: (id) => mutate((s) => engine.removeEdge(s, id)),
     moveNode: (id, position) => mutate((s) => engine.moveNode(s, id, position)),
     configure: (id, patch) => mutate((s) => engine.updateConfig(s, id, patch)),
     enableRootMfa: () => mutate((s) => engine.enableRootMfa(s)),
-    dismissNotice: () => mutate((s) => engine.dismissNotice(s)),
-    choose: (option) => mutate((s, ch) => engine.resolveChoice(s, ch, option)),
+    dismissNotice: () => {
+      const notice = get().sim?.notices[0];
+      if (notice?.strike && !get().progress.seenStrikeIntro) {
+        const progress = { ...get().progress, seenStrikeIntro: true };
+        saveProgress(progress);
+        set({ progress });
+      }
+      mutate((s) => engine.dismissNotice(s));
+    },
+    choose: (option) => mutate((s, m) => engine.resolveChoice(s, m, option)),
     answer: (option) =>
       mutate((s) => {
         const q = getQuestion(s.notices[0]?.questionId ?? '');
@@ -137,7 +226,27 @@ export const useGame = create<GameStore>((set, get) => {
       set({ toast: { id, text } });
       setTimeout(() => {
         if (get().toast?.id === id) set({ toast: null });
-      }, 3000);
+      }, 3500);
     },
   };
 });
+
+/** Feature set for the current mission step. */
+export function useFeatures(): Set<Feature> {
+  const missionIdx = useGame((s) => s.missionIdx);
+  const stepIndex = useGame((s) => s.stepIndex);
+  const mission = useGame((s) => s.mission);
+  return featuresOf({ missionIdx, stepIndex, mission });
+}
+
+/** Class for an element the tutorial is pointing at. */
+export function useTut(key: string): string {
+  const active = useGame((s) => {
+    const step = currentStep(s);
+    return !!step && !s.stepDone && step.highlight === key;
+  });
+  return active ? ' tut-pulse' : '';
+}
+
+// Dev-only handle for debugging and automated play-testing.
+if (import.meta.env.DEV) (globalThis as Record<string, unknown>).__game = useGame;

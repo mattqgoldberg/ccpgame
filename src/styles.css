@@ -101,6 +101,7 @@ p { line-height: 1.5; margin: 0 0 10px; }
 .objectives li { padding: 3px 0; }
 .objectives li.met { color: var(--good); }
 .objectives li.missed { color: var(--bad); }
+.modal .objectives { margin-bottom: 14px; }
 .tips { padding-left: 18px; margin: 0; font-size: 12px; color: #cbd5e1; }
 .tips li { margin-bottom: 6px; }
 .alerts { list-style: none; padding: 0; margin: 0; font-size: 12px; }
@@ -188,3 +189,54 @@ p { line-height: 1.5; margin: 0 0 10px; }
 .chapter-card { text-align: left; padding: 16px; background: var(--panel); border-radius: 10px; }
 .chapter-card:hover:not(:disabled) { border-color: var(--accent); }
 .chapter-name { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+
+/* ── Tutorial ─────────────────────────── */
+.tut-pulse { position: relative; outline: 2px solid #facc15; outline-offset: 3px; border-radius: 8px; animation: tut-pulse 1.4s ease-in-out infinite; }
+@keyframes tut-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(250 204 21 / 0.55); }
+  50% { box-shadow: 0 0 0 8px rgb(250 204 21 / 0); }
+}
+.svc.tut-pulse { outline-offset: 4px; border-radius: 10px; }
+.coach { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(600px, calc(100% - 32px)); background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 14px 16px; box-shadow: 0 12px 32px rgb(0 0 0 / 0.5); z-index: 10; max-height: 55%; overflow-y: auto; }
+.coach-boss { border-left-color: #f59e0b; }
+.coach p { font-size: 13px; margin-bottom: 8px; }
+.coach-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.avatar { flex: none; width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #78350f; color: #fde68a; font-weight: 700; font-size: 13px; }
+.coach-guide .avatar { background: #312e81; }
+.coach-who { font-size: 11px; color: var(--muted); }
+.coach-title { font-weight: 700; font-size: 15px; }
+.coach-count { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.small-btn { padding: 2px 8px; font-size: 12px; }
+.task { display: flex; gap: 10px; align-items: flex-start; background: var(--panel-2); border: 1px solid #facc15; border-radius: 8px; padding: 8px 10px; margin: 6px 0 8px; font-size: 13px; font-weight: 600; }
+.task-done { border-color: var(--good); color: var(--good); }
+.task-box { flex: none; width: 18px; height: 18px; border: 2px solid currentColor; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.why { font-size: 12px !important; color: #cbd5e1; }
+.success { color: var(--good); font-weight: 600; }
+.coach-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.coach-tab { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 10; background: var(--panel); border-left: 4px solid #f59e0b; }
+.hidden-handle { opacity: 0; pointer-events: none; }
+.speed .paused { background: #3b2f0b; border-color: #a16207; }
+
+/* ── Boss ─────────────────────────────── */
+.boss-meter { min-width: 130px; padding: 2px 6px; }
+.strikes { display: flex; align-items: center; gap: 4px; }
+.pip { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; border: 1px solid #64748b; color: #64748b; font-size: 11px; font-weight: 700; }
+.pip.on { background: var(--bad); border-color: var(--bad); color: white; }
+.strike-label { font-size: 11px; color: var(--muted); margin-left: 4px; }
+.countdown { font-weight: 600; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.55; } }
+.strike-pips { display: flex; gap: 8px; margin: 4px 0 14px; }
+.strike-pips .pip { width: 34px; height: 34px; font-size: 18px; border-radius: 8px; }
+.explainer { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+.explainer h4 { margin-top: 0; }
+.explainer ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.explainer li { margin-bottom: 4px; }
+
+/* ── Mission menu ─────────────────────── */
+button.big { font-size: 16px; padding: 10px 20px; margin: 6px 0 12px; }
+.chapter-row { display: grid; grid-template-columns: 240px 1fr; gap: 16px; padding: 18px 0; border-top: 1px solid var(--line); }
+.chapter-row.coming { opacity: 0.45; }
+.mission-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; align-content: start; }
+.mission-card { text-align: left; padding: 12px; background: var(--panel); border-radius: 10px; }
+.mission-card:hover:not(:disabled) { border-color: var(--accent); }
+.mission-name { font-weight: 600; margin-bottom: 4px; }

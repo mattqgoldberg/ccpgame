@@ -1,5 +1,5 @@
 import type { ChapterDef } from './chapter';
-import type { SimState } from './types';
+import type { ServiceKind, SimState } from './types';
 
 export interface AdvisorCheck {
   id: string;
@@ -14,7 +14,7 @@ const LOCKED = 'Requires the Business Support plan or higher.';
 
 /** Trusted Advisor checks. Basic Support only includes the core security checks. */
 export function advisorChecks(s: SimState, ch: ChapterDef): AdvisorCheck[] {
-  if (ch.id === 0) return [];
+  if (!ch.cloud) return [];
   const checks: AdvisorCheck[] = [
     s.flags.rootMfa
       ? { id: 'root-mfa', category: 'Security', title: 'MFA on root account', status: 'ok', detail: 'The root user is protected with MFA.' }
@@ -36,11 +36,13 @@ export function advisorChecks(s: SimState, ch: ChapterDef): AdvisorCheck[] {
         : { id: 'ssh', category: 'Security', title: 'Security groups: specific ports unrestricted', status: 'ok', detail: 'No sensitive ports are open to the internet.' },
     );
   }
-  checks.push(
-    { id: 'low-util', category: 'Cost optimization', title: 'Low utilization EC2 instances', status: 'locked', detail: LOCKED },
-    { id: 'rds-multi-az', category: 'Fault tolerance', title: 'RDS Multi-AZ', status: 'locked', detail: LOCKED },
-    { id: 'az-balance', category: 'Fault tolerance', title: 'EC2 Availability Zone balance', status: 'locked', detail: LOCKED },
-    { id: 'cdn', category: 'Performance', title: 'CloudFront content delivery optimization', status: 'locked', detail: LOCKED },
-  );
+  // Checks that need a higher support plan, shown only once the player has met the service they're about.
+  const lockedChecks: (AdvisorCheck & { needs: ServiceKind })[] = [
+    { id: 'cdn', category: 'Performance', title: 'CloudFront content delivery optimization', status: 'locked', detail: LOCKED, needs: 'cloudfront' },
+    { id: 'low-util', category: 'Cost optimization', title: 'Low utilization EC2 instances', status: 'locked', detail: LOCKED, needs: 'ec2' },
+    { id: 'rds-multi-az', category: 'Fault tolerance', title: 'RDS Multi-AZ', status: 'locked', detail: LOCKED, needs: 'rds' },
+    { id: 'az-balance', category: 'Fault tolerance', title: 'EC2 Availability Zone balance', status: 'locked', detail: LOCKED, needs: 'elb' },
+  ];
+  for (const { needs, ...check } of lockedChecks) if (ch.available.includes(needs)) checks.push(check);
   return checks;
 }

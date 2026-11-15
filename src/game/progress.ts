@@ -1,20 +1,24 @@
-const KEY = 'cloud-tycoon:v1';
+const KEY = 'cloud-tycoon:v2';
 
 export interface Progress {
-  /** Best stars per chapter id. */
-  stars: Record<number, number>;
+  /** Best stars per mission id. A mission with stars has been completed. */
+  stars: Record<string, number>;
   /** Codex entries discovered across all play. */
   codex: string[];
+  /** The full explanation of strikes has been shown once. */
+  seenStrikeIntro: boolean;
 }
+
+const EMPTY: Progress = { stars: {}, codex: [], seenStrikeIntro: false };
 
 export function loadProgress(): Progress {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { stars: {}, codex: [], ...JSON.parse(raw) };
+    if (raw) return { ...EMPTY, ...JSON.parse(raw) };
   } catch {
     // Corrupt or unavailable storage: start fresh.
   }
-  return { stars: {}, codex: [] };
+  return { ...EMPTY };
 }
 
 export function saveProgress(p: Progress) {
@@ -23,4 +27,13 @@ export function saveProgress(p: Progress) {
   } catch {
     // Storage full or disabled; progress just won't persist.
   }
+}
+
+export function clearProgress(): Progress {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // Ignore.
+  }
+  return { ...EMPTY };
 }

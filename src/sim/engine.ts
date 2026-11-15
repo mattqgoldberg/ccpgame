@@ -3,9 +3,22 @@ import type { ChapterDef, GameEvent } from './chapter';
 import { nextRandom } from './rng';
 import type { ChapterStats, NodeConfig, NodeMetrics, Notice, ServiceKind, SimNode, SimState, Traffic } from './types';
 
+/** How the boss reacts to trouble. */
+export const BOSS = {
+  /** An hour counts as failing when fewer than this share of requests succeed. */
+  failingAvailability: 0.9,
+  /** Consecutive failing hours before a strike. */
+  hoursBeforeStrike: 3,
+  /** While the site stays down, another strike every this many hours. */
+  repeatEvery: 12,
+  maxStrikes: 3,
+  name: 'Morgan',
+};
+
 const ALARM_COOLDOWN_HOURS = 12;
 const COMPLAINT_DELAY_HOURS = 3;
 const ONPREM_RESALE = 0.3;
+const HOURS_PER_MONTH = 720;
 
 type FlowType = 'static' | 'dynamic' | 'junk';
 
@@ -33,7 +46,7 @@ export function createSim(ch: ChapterDef, seed = 1): SimState {
     if (id) codex.add(id);
   }
   return {
-    chapterId: ch.id,
+    missionId: ch.id,
     hour: 0,
     cash: ch.startingCash,
     satisfaction: 50,
@@ -45,7 +58,8 @@ export function createSim(ch: ChapterDef, seed = 1): SimState {
     notices: [],
     alerts: [],
     alarmFiredAt: {},
-    flags: { rootMfa: false },
+    flags: { rootMfa: !!ch.startsWithMfa },
+    boss: { enabled: ch.strikes, strikes: 0, badHours: 0, log: [] },
     last: { demand: { static: 0, dynamic: 0, junk: 0 }, served: 0, latencyMs: 0, revenue: 0, cost: 0, nodes: {}, edges: {} },
     history: [],
     bill: {},
@@ -313,6 +327,46 @@ function alarmOrComplain(s: SimState, eventId: string, alarm: Omit<Notice, 'id'>
   }
 }
 
+/** Plain-language list of what's currently broken, used in strike notices. */
+export function diagnose(s: SimState): string[] {
+  const problems: string[] = [];
+  for (const n of s.nodes) {
+    const m = s.last.nodes[n.id];
+    if (!m) continue;
+    const name = CATALOG[n.kind].name;
+    if (m.down) problems.push(`${name} is down (${m.downReason}).`);
+    else if (m.capacity > 0 && m.load > m.capacity) problems.push(`${name} is over capacity: it’s getting ${Math.round((m.load / m.capacity) * 100)}% of what it can handle.`);
+    else if (m.warning) problems.push(`${name}: ${m.warning}.`);
+  }
+  return problems;
+}
+
+/** The boss hands out a strike. Three in a month and you're fired. */
+export function addStrike(s: SimState, reason: string) {
+  if (!s.boss.enabled || s.finished) return;
+  s.boss.strikes += 1;
+  s.boss.log.push({ hour: s.hour, reason });
+  const fired = s.boss.strikes >= BOSS.maxStrikes;
+  const problems = diagnose(s);
+  pushNotice(s, {
+    title: fired ? 'You’re fired' : `Strike ${s.boss.strikes} of ${BOSS.maxStrikes}`,
+    body: [
+      reason,
+      ...(fired
+        ? [`${BOSS.name}: “That’s three this month. I’m sorry, but I need someone who can keep the store running.”`]
+        : problems.length
+          ? ['What’s wrong right now:', ...problems.map((p) => `• ${p}`)]
+          : []),
+    ],
+    tone: 'danger',
+    strike: { count: s.boss.strikes, max: BOSS.maxStrikes },
+  });
+  if (fired) {
+    s.finished = true;
+    s.failed = `${BOSS.name} let you go after ${BOSS.maxStrikes} strikes this month.`;
+  }
+}
+
 export function fireEvent(s: SimState, ev: GameEvent) {
   switch (ev.kind) {
     case 'info':
@@ -366,6 +420,7 @@ export function fireEvent(s: SimState, ev: GameEvent) {
           tone: 'danger',
           codexIds: ['security-groups', 'shared-responsibility'],
         });
+        addStrike(s, 'Attackers broke into our servers through an open SSH port.');
       } else if (computeNodes(s).length) {
         pushNotice(s, {
           title: 'Attack blocked by your security groups',
@@ -404,6 +459,7 @@ export function fireEvent(s: SimState, ev: GameEvent) {
           tone: 'danger',
           codexIds: ['mfa', 'root-user'],
         });
+        addStrike(s, 'Someone took over our AWS account because the root user had no MFA.');
       }
       break;
     case 'compromise': {
@@ -412,6 +468,7 @@ export function fireEvent(s: SimState, ev: GameEvent) {
       for (const n of targets) n.compromisedUntil = s.hour + ev.duration;
       s.stats.compromises += 1;
       pushNotice(s, { title: ev.title, body: ev.body, tone: 'danger', codexIds: ev.codexIds });
+      addStrike(s, 'Attackers broke into our unpatched servers.');
       break;
     }
     case 'choice':
@@ -575,12 +632,42 @@ function raiseAlarms(s: SimState, flow: FlowResult, availability: number) {
   if (availability < 0.95) fire('availability', `ALARM Only ${Math.round(availability * 100)}% of requests succeeded this hour`, 'danger');
 }
 
+function trackIncident(s: SimState, availability: number) {
+  if (!s.boss.enabled) return;
+  if (availability >= BOSS.failingAvailability) {
+    if (s.boss.badHours >= BOSS.hoursBeforeStrike) {
+      s.alerts.push({ hour: s.hour, text: 'The site has recovered.', tone: 'info' });
+    }
+    s.boss.badHours = 0;
+    return;
+  }
+  s.boss.badHours += 1;
+  const pct = Math.round(availability * 100);
+  if (s.boss.badHours === 1) {
+    s.alerts.push({
+      hour: s.hour,
+      text: `Only ${pct}% of requests are succeeding! Fix it within ${BOSS.hoursBeforeStrike} hours or ${BOSS.name} will notice.`,
+      tone: 'danger',
+    });
+  }
+  const over = s.boss.badHours - BOSS.hoursBeforeStrike;
+  if (over >= 0 && over % BOSS.repeatEvery === 0) {
+    addStrike(
+      s,
+      over === 0
+        ? `${BOSS.name}: “The store has been failing for ${BOSS.hoursBeforeStrike} hours straight. Customers are emailing me. That’s a strike.”`
+        : `${BOSS.name}: “We’ve been broken for ${s.boss.badHours} hours now. Another strike.”`,
+    );
+  }
+}
+
 // ── Tick ──────────────────────────────────────────────────────────────────
 
 /** Advances the simulation one hour. Mutates `s`. Does nothing while a notice is waiting or the chapter is over. */
 export function step(s: SimState, ch: ChapterDef) {
   if (s.finished || s.notices.length) return;
 
+  if (s.hour > 0 && s.hour % HOURS_PER_MONTH === 0) s.boss.strikes = 0;
   processEvents(s, ch);
   autoScale(s);
 
@@ -628,8 +715,10 @@ export function step(s: SimState, ch: ChapterDef) {
 
   s.last = { demand, served, latencyMs, revenue, cost, nodes: flow.nodes, edges: flow.edges };
   s.history.push({ hour: s.hour, demand: wanted, served, latencyMs, revenue, cost });
+  trackIncident(s, availability);
 
   s.hour += 1;
+  if (s.finished) return;
   if (s.cash < 0) {
     s.finished = true;
     s.failed = 'You ran out of money.';

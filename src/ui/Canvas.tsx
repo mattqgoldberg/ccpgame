@@ -11,7 +11,7 @@ import {
   type IsValidConnection,
   type NodeChange,
 } from '@xyflow/react';
-import { useGame } from '../game/store';
+import { useFeatures, useGame } from '../game/store';
 import { canConnect } from '../sim/catalog';
 import type { ServiceKind } from '../sim/types';
 import { compact } from './format';
@@ -25,6 +25,10 @@ export function Canvas() {
   const selectedId = useGame((s) => s.selectedId);
   const { moveNode, select, removeNode, removeEdge, connect, addService } = useGame.getState();
   const { screenToFlowPosition } = useReactFlow();
+  const features = useFeatures();
+  const canConnectNodes = features.has('connect');
+  const canDelete = features.has('delete');
+  const showSsh = features.has('config-ssh');
 
   const nodes = useMemo<ServiceRFNode[]>(
     () =>
@@ -33,10 +37,16 @@ export function Canvas() {
         type: 'service',
         position: n.position,
         selected: n.id === selectedId,
-        deletable: n.kind !== 'users',
-        data: { node: n, metrics: sim.last.nodes[n.id], demand: n.kind === 'users' ? sim.last.demand : undefined },
+        deletable: canDelete && n.kind !== 'users',
+        data: {
+          node: n,
+          metrics: sim.last.nodes[n.id],
+          demand: n.kind === 'users' ? sim.last.demand : undefined,
+          connectable: canConnectNodes,
+          showSsh,
+        },
       })),
-    [sim, selectedId],
+    [sim, selectedId, canDelete, canConnectNodes, showSsh],
   );
 
   const edges = useMemo<Edge[]>(
@@ -47,13 +57,14 @@ export function Canvas() {
           id: e.id,
           source: e.source,
           target: e.target,
+          deletable: canDelete,
           animated: flow > 0.05,
           label: flow > 0.05 ? `${compact(flow)}/s` : undefined,
           style: { strokeWidth: 1.5 + Math.min(4, Math.log10(1 + flow)) },
           markerEnd: { type: MarkerType.ArrowClosed },
         };
       }),
-    [sim],
+    [sim, canDelete],
   );
 
   const onNodesChange = useCallback(
@@ -110,7 +121,9 @@ export function Canvas() {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
       }}
-      deleteKeyCode={['Backspace', 'Delete']}
+      deleteKeyCode={canDelete ? ['Backspace', 'Delete'] : null}
+      nodesConnectable={canConnectNodes}
+      edgesFocusable={canDelete}
       colorMode="dark"
       fitView
       fitViewOptions={{ padding: 0.15, maxZoom: 1 }}

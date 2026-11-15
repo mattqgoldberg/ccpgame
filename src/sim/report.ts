@@ -99,7 +99,7 @@ export function buildReport(s: SimState, ch: ChapterDef): Report {
   if (onprem) {
     security.push({ label: 'Physical security', score: 40, detail: 'Locks, cameras, and power for your server closet are all on you. In the cloud, that is AWS’s responsibility.' });
   }
-  if (ch.id >= 1) {
+  if (ch.cloud) {
     security.push({
       label: 'Root user protected with MFA',
       score: s.flags.rootMfa ? 100 : 0,
