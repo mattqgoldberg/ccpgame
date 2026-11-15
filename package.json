@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc -b",
-    "coverage:report": "tsx scripts/coverage-report.ts"
+    "coverage:report": "tsx scripts/coverage-report.ts",
+    "balance": "tsx scripts/balance.ts"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.1",

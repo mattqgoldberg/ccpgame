@@ -12,6 +12,7 @@ npm install
 npm run dev               # start the prototype
 npm test                  # run tests (includes coverage-matrix checks)
 npm run coverage:report   # how topics spread across exam domains and chapters
+npm run balance           # play each chapter with scripted strategies and print outcomes
 ```
 
 Not affiliated with or endorsed by Amazon Web Services.

@@ -87,15 +87,18 @@ Afterwards: **sandbox mode** with everything unlocked and random events.
 - **Zustand:** game state store shared between the simulation and the UI.
 - **Vitest:** unit tests, especially for the simulation engine and content integrity.
 
-### Code layout (planned)
+### Code layout
 
 ```
 src/
-  content/   exam structure, chapters, coverage matrix, services, events, questions (pure data)
+  content/   exam structure, coverage matrix, playable chapters, board questions, Codex text (pure data)
   sim/       simulation engine: pure TypeScript, no React, deterministic, unit-tested
-  game/      store, chapter scripting, save/load
-  ui/        canvas, node components, panels (bill, Codex, events, report card)
+    testing/ headless harness + scripted strategies used by balance tests and `npm run balance`
+  game/      Zustand store, save/load
+  ui/        canvas, node components, panels (goals, inspector, bill, advisor, Codex), modals
 ```
+
+**Balancing:** `src/sim/testing/strategies.ts` lists architectures a player might build for each chapter and whether they should pass. `balance.test.ts` enforces those expectations, so tuning a number that makes a bad design win (or a good one lose) fails CI.
 
 ### Other notes
 
@@ -104,7 +107,7 @@ src/
 
 ## Milestones
 
-1. **Vertical slice:** the simulation engine and chapters 0–3. Covers about 12 Tier-1 services, the monthly bill, one attack event, an AZ outage, one board question, and the report card. Goal: prove the core loop is fun.
+1. ✅ **Vertical slice** (done: `src/sim/`, `src/content/campaign.ts`, `src/ui/`): the simulation engine and chapters 0–3. Covers about 12 Tier-1 services, the monthly bill, one attack event, an AZ outage, one board question, and the report card. Goal: prove the core loop is fun.
 2. **Security and events:** chapters 4–5, the incident framework, shared-responsibility cards, IAM hiring, and the Codex.
 3. **Economy depth:** chapter 6, pricing commitments, support plans as the hint system, Trusted Advisor, and cost tooling.
 4. **Breadth:** chapters 7–10, the request system, the readiness meter, study mode, and the mock exam.
