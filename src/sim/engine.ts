@@ -242,6 +242,9 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
   const incoming = new Map<string, Flow[]>();
   const order = [...s.nodes].sort((a, b) => RANK[a.kind] - RANK[b.kind]);
   const sources = s.nodes.filter((n) => n.kind === 'users');
+  const floods = s.effects.filter((e) => e.kind === 'http-flood');
+  const floodTotal = floods.reduce((sum, e) => sum + e.magnitude, 0);
+  const cachedShare = floodTotal > 0 ? floods.filter((e) => !e.uncached).reduce((sum, e) => sum + e.magnitude, 0) / floodTotal : 1;
 
   const serve = (node: SimNode, f: Flow, rps: number) => {
     if (f.type === 'dynamic' && f.origin === 'eu' && node.kind !== 'sqs') {
@@ -330,6 +333,8 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
       const b = CATALOG[n.kind].behavior;
       if (b === 'storage') return type !== 'dynamic';
       if (b === 'queue') return type === 'dynamic';
+      // APIs serve application requests, not files.
+      if (n.kind === 'apigw') return type !== 'static';
       return true;
     };
     const healthy = (type: FlowType) => (n: SimNode) => canTake(type)(n) && !down.get(n.id);
@@ -389,7 +394,7 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
           break;
         case 'cdn': {
           r.cloudfrontRequests += rps;
-          const hitRate = f.type === 'static' ? BALANCE.cdnHitRate : f.type === 'junk' ? BALANCE.cdnJunkHitRate : 0;
+          const hitRate = f.type === 'static' ? BALANCE.cdnHitRate : f.type === 'junk' ? BALANCE.cdnJunkHitRate * cachedShare : 0;
           const hits = rps * hitRate;
           if (hits > 0) {
             serve(node, { ...f, latency, viaEdge: true }, hits);
@@ -528,7 +533,7 @@ export function fireEvent(s: SimState, ev: GameEvent) {
       break;
     }
     case 'http-flood':
-      s.effects.push({ eventId: ev.id, kind: 'http-flood', since: s.hour, until: s.hour + ev.duration, magnitude: ev.rps });
+      s.effects.push({ eventId: ev.id, kind: 'http-flood', since: s.hour, until: s.hour + ev.duration, magnitude: ev.rps, uncached: ev.uncached });
       alarmOrComplain(s, ev.id, {
         title: 'ALARM: Request rate is 20× normal',
         body: [

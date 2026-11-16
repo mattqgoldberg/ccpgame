@@ -27,7 +27,7 @@ export type GameEvent = EventBase &
     | { kind: 'info'; title: string; body: string[]; tone?: 'info' | 'success' | 'warning'; codexIds?: string[] }
     | { kind: 'traffic-spike'; multiplier: number; duration: number; title: string; body: string[]; debrief?: string[]; codexIds?: string[] }
     | { kind: 'az-outage'; az: Az; duration: number; debrief: string[]; codexIds?: string[] }
-    | { kind: 'http-flood'; rps: number; duration: number; debrief: string[]; codexIds?: string[] }
+    | { kind: 'http-flood'; rps: number; duration: number; debrief: string[]; codexIds?: string[]; /** Targets pages that can't be cached (login, search). */ uncached?: boolean }
     | { kind: 'ssh-bruteforce'; duration: number }
     | { kind: 'root-check'; loss: number }
     | { kind: 'compromise'; duration: number; title: string; body: string[]; codexIds?: string[] }
@@ -59,7 +59,9 @@ export type ObjectiveKind =
   /** Practice exam score at least this share. */
   | 'exam'
   /** Total spend (bill) at most this many dollars. */
-  | 'spend';
+  | 'spend'
+  /** Compute and database spend (after commitments) at most this many dollars. */
+  | 'compute-spend';
 
 export interface Objective {
   kind: ObjectiveKind;

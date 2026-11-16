@@ -8,7 +8,7 @@ import { FAILING_STRATEGIES } from './testing/strategies';
 
 describe('tutorial walkthroughs', () => {
   for (const mission of MISSIONS) {
-    it(`mission ${mission.id} (${mission.title}): every step can be completed, and the mission passes with no strikes`, () => {
+    it(`mission ${mission.id} (${mission.title}): every step can be completed, and the mission passes with the expected strikes`, () => {
       const s = createSim(mission, 42);
       const ui: UiState = { selectedId: null, tab: 'inspect', speed: 0 };
       const api = makeSolver(s, mission, ui);
@@ -33,7 +33,7 @@ describe('tutorial walkthroughs', () => {
       const report = buildReport(s, mission);
       const summary = report.objectives.map((o) => `${o.met ? 'met' : 'MISSED'} ${o.label}: ${o.value}`).join('; ');
       expect(report.passed, summary).toBe(true);
-      expect(s.boss.strikes, s.boss.log.map((l) => l.reason).join(' | ')).toBe(0);
+      expect(s.boss.strikes, s.boss.log.map((l) => l.reason).join(' | ')).toBe(mission.expectedStrikes ?? 0);
     });
   }
 });

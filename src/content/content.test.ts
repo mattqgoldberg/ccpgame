@@ -36,6 +36,13 @@ function featureFor(highlight: string): Feature | null {
   if (highlight === 'inspect-az') return 'config-az';
   if (highlight === 'inspect-multiaz') return 'config-multiaz';
   if (highlight === 'advisor-mfa') return 'tab-advisor';
+  if (highlight === 'inspect-https') return 'config-https';
+  if (highlight === 'inspect-encryption') return 'config-encryption';
+  if (highlight === 'inspect-spot') return 'config-spot';
+  if (highlight === 'inspect-storage') return 'config-storage';
+  if (highlight === 'inspect-region') return 'config-region';
+  if (highlight.startsWith('deploy-')) return 'cloudformation';
+  if (prefix === 'acct') return `acct:${rest}` as Feature;
   if (prefix === 'node') return null;
   if (prefix === 'edge') return 'connect';
   throw new Error(`Unknown highlight "${highlight}"`);
@@ -103,6 +110,11 @@ describe('missions', () => {
         }
       }
     });
+  });
+
+  it('let the player discover every exam topic somewhere in the campaign', () => {
+    const missing = COVERAGE.map((e) => e.id).filter((id) => !reachableCodexIds().has(id));
+    expect(missing, 'Add these to a mission’s codexOnComplete, a step’s codex, or an event').toEqual([]);
   });
 
   it('reference real board questions with a valid answer', () => {

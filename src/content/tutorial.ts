@@ -1,5 +1,5 @@
 import type { ChapterDef } from '../sim/chapter';
-import type { NodeConfig, ServiceKind, SimNode, SimState } from '../sim/types';
+import type { Account, NodeConfig, Region, ServiceKind, SimNode, SimState, StaffMember } from '../sim/types';
 
 /** UI features that start hidden and are unlocked by tutorial steps. Once unlocked, they stay unlocked in later missions. */
 export type Feature =
@@ -18,6 +18,7 @@ export type Feature =
   | 'tab-bill'
   | 'tab-advisor'
   | 'tab-codex'
+  | 'tab-account'
   | 'chart'
   | 'alerts'
   | 'report-card'
@@ -28,9 +29,20 @@ export type Feature =
   | 'config-multiaz'
   | 'config-ssh'
   | 'config-asg-range'
-  | `svc:${ServiceKind}`;
+  | 'config-https'
+  | 'config-encryption'
+  | 'config-spot'
+  | 'config-region'
+  | 'config-storage'
+  | 'cloudformation'
+  | 'cost-explorer'
+  | `svc:${ServiceKind}`
+  | `acct:${AccountKey}`;
 
-export type Tab = 'goals' | 'inspect' | 'bill' | 'advisor' | 'codex';
+/** Account settings that can be unlocked one at a time. */
+export type AccountKey = Exclude<keyof Account, 'budgetAlerted'>;
+
+export type Tab = 'goals' | 'inspect' | 'bill' | 'advisor' | 'codex' | 'account';
 
 export interface UiState {
   selectedId: string | null;
@@ -60,6 +72,10 @@ export interface SolveApi {
   tab(tab: Tab): void;
   play(): void;
   enableMfa(): void;
+  account(patch: Partial<Account>): void;
+  staff(id: string, patch: Partial<StaffMember>): void;
+  removeStaff(id: string): void;
+  deploy(region: Region): void;
 }
 
 export interface Step {
@@ -128,6 +144,13 @@ export const hourAtLeast = (hour: number): Check => ({ sim }) => sim.hour >= hou
 export const missionOver: Check = ({ sim }) => sim.finished;
 export const mfaOn: Check = ({ sim }) => sim.flags.rootMfa;
 export const all = (...checks: Check[]): Check => (c) => checks.every((f) => f(c));
+export const acct = (pred: (a: Account) => boolean): Check => ({ sim }) => pred(sim.account);
+export const everyone = (pred: (p: StaffMember) => boolean): Check => ({ sim }) => sim.account.staff.length > 0 && sim.account.staff.every(pred);
+export const inRegion = (kind: ServiceKind, region: Region): Check => ({ sim }) => sim.nodes.some((n) => n.kind === kind && (n.config.region ?? 'us') === region);
+export const node = (id: string, pred: (n: SimNode) => boolean): Check => ({ sim }) => {
+  const n = sim.nodes.find((x) => x.id === id);
+  return !!n && pred(n);
+};
 
 // ── Feature bookkeeping ───────────────────────────────────────────────────
 

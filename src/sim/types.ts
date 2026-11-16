@@ -159,6 +159,8 @@ export interface ActiveEffect {
   magnitude: number;
   az?: Az;
   region?: Region;
+  /** HTTP flood against pages CloudFront can't cache. */
+  uncached?: boolean;
 }
 
 export interface Notice {

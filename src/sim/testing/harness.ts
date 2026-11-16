@@ -6,7 +6,12 @@ import {
   answerQuestion,
   connect,
   createSim,
+  deployStack,
   dismissNotice,
+  recordExam,
+  removeStaff,
+  setAccount,
+  updateStaff,
   enableRootMfa,
   removeNode,
   resolveChoice,
@@ -57,6 +62,8 @@ export function expertDecide(ch: ChapterDef) {
     } else if (n.questionId) {
       const q = getQuestion(n.questionId)!;
       answerQuestion(s, true, q.reward, q.codexIds);
+    } else if (n.exam) {
+      recordExam(s, n.exam.questionIds.length, n.exam.questionIds.length);
     } else {
       dismissNotice(s);
     }
@@ -115,5 +122,15 @@ export function makeSolver(s: SimState, ch: ChapterDef, ui: UiState): SolveApi {
     tab: (tab) => void (ui.tab = tab),
     play: () => void (ui.speed = 1),
     enableMfa: () => enableRootMfa(s),
+    account(patch) {
+      const err = setAccount(s, patch);
+      if (err) throw new Error(err);
+    },
+    staff: (id, patch) => updateStaff(s, id, patch),
+    removeStaff: (id) => removeStaff(s, id),
+    deploy(region) {
+      const err = deployStack(s, region);
+      if (err) throw new Error(err);
+    },
   };
 }

@@ -69,6 +69,16 @@ export function totalSpend(s: SimState): number {
   return Object.values(s.bill).reduce((sum, v) => sum + v, 0);
 }
 
+const COMPUTE_LINES = [
+  'EC2 Instance', 'EC2 (Auto Scaling)', 'RDS Database', 'Lambda Function',
+  'Savings Plan commitment', 'Savings Plan coverage', 'Reserved DB commitment', 'Reserved DB coverage',
+];
+
+/** Servers, functions, and databases, after commitment discounts. */
+export function computeSpend(s: SimState): number {
+  return COMPUTE_LINES.reduce((sum, k) => sum + (s.bill[k] ?? 0), 0);
+}
+
 export function averageLatency(s: SimState): number {
   return s.stats.served > 0 ? s.stats.latencyWeighted / s.stats.served : 0;
 }
@@ -99,6 +109,10 @@ export function evaluateObjective(s: SimState, o: Objective): ObjectiveResult {
       return { label: o.label, met: (s.examScore ?? 0) >= o.target, value: s.examScore === undefined ? 'not taken' : pct(s.examScore, 0) };
     case 'spend': {
       const v = totalSpend(s);
+      return { label: o.label, met: v <= o.target, value: `$${Math.round(v).toLocaleString()}` };
+    }
+    case 'compute-spend': {
+      const v = computeSpend(s);
       return { label: o.label, met: v <= o.target, value: `$${Math.round(v).toLocaleString()}` };
     }
   }
