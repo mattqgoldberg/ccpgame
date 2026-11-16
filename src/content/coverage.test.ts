@@ -43,4 +43,9 @@ describe('coverage matrix', () => {
       expect(entries.length, `chapter ${chapter}`).toBeGreaterThan(0);
     }
   });
+
+  it('has Codex text for every topic', async () => {
+    const { CODEX_TEXT } = await import('./codex');
+    expect(COVERAGE.filter((e) => !CODEX_TEXT[e.id]).map((e) => e.id)).toEqual([]);
+  });
 });

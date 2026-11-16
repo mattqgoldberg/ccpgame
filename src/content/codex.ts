@@ -1,5 +1,8 @@
+import { CODEX_TEXT_MORE } from './codex2';
+
 /** Player-facing Codex text, keyed by coverage-matrix id. */
 export const CODEX_TEXT: Record<string, string> = {
+  ...CODEX_TEXT_MORE,
   'six-benefits':
     'AWS lists six advantages of cloud computing: trade fixed expense for variable expense; benefit from massive economies of scale; stop guessing capacity; increase speed and agility; stop spending money running and maintaining data centers; and go global in minutes.',
   'capex-opex':

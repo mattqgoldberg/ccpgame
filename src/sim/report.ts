@@ -1,4 +1,5 @@
 import { isComputeKind } from './catalog';
+import { allHttps } from './engine';
 import type { ChapterDef, Objective } from './chapter';
 import type { SimState } from './types';
 
@@ -36,6 +37,7 @@ const TIPS: Record<string, string> = {
   'Profit margin': 'Cut idle resources, and keep the store up so customers keep buying.',
   'Minimal idle capacity': 'Avoid servers that sit mostly idle: buy fewer, pick smaller sizes, or let Auto Scaling match demand.',
   'Managed and shared infrastructure': 'Prefer managed services (S3, RDS, CloudFront) over servers you run yourself.',
+  'Encryption in transit and at rest': 'Turn on HTTPS (ACM certificates) on every entry point and KMS encryption on every data store.',
 };
 
 /** Criteria that only improve by leaving physical hardware behind. */
@@ -62,6 +64,11 @@ export function availability(s: SimState): number {
   return s.stats.demand > 0 ? s.stats.served / s.stats.demand : 1;
 }
 
+/** Everything on the bill this mission, including hardware and fines. */
+export function totalSpend(s: SimState): number {
+  return Object.values(s.bill).reduce((sum, v) => sum + v, 0);
+}
+
 export function averageLatency(s: SimState): number {
   return s.stats.served > 0 ? s.stats.latencyWeighted / s.stats.served : 0;
 }
@@ -84,6 +91,16 @@ export function evaluateObjective(s: SimState, o: Objective): ObjectiveResult {
       return { label: o.label, met: s.cash >= o.target, value: `$${Math.round(s.cash).toLocaleString()}` };
     case 'served':
       return { label: o.label, met: s.stats.served >= o.target, value: Math.round(s.stats.served).toLocaleString() };
+    case 'residency': {
+      const v = s.stats.euDynamic > 0 ? s.stats.euOutside / s.stats.euDynamic : 0;
+      return { label: o.label, met: v <= o.target, value: `${pct(v)} left the EU` };
+    }
+    case 'exam':
+      return { label: o.label, met: (s.examScore ?? 0) >= o.target, value: s.examScore === undefined ? 'not taken' : pct(s.examScore, 0) };
+    case 'spend': {
+      const v = totalSpend(s);
+      return { label: o.label, met: v <= o.target, value: `$${Math.round(v).toLocaleString()}` };
+    }
   }
 }
 
@@ -139,6 +156,16 @@ export function buildReport(s: SimState, ch: ChapterDef): Report {
       label: 'Least-privilege network access',
       score: open ? 0 : 100,
       detail: open ? 'A security group allows SSH from the entire internet.' : 'Security groups only allow the traffic you need.',
+    });
+  }
+  if (ch.requireHttps) {
+    const encryptedStores = s.nodes.filter((n) => ['rds', 'dynamodb', 's3'].includes(n.kind));
+    const atRest = encryptedStores.length === 0 || encryptedStores.every((n) => n.config.encrypted);
+    const inTransit = allHttps(s);
+    security.push({
+      label: 'Encryption in transit and at rest',
+      score: (inTransit ? 50 : 0) + (atRest ? 50 : 0),
+      detail: `${inTransit ? 'HTTPS everywhere.' : 'Some entry points don’t use HTTPS.'} ${atRest ? 'Data stores are encrypted with KMS.' : 'Some data stores aren’t encrypted.'}`,
     });
   }
   security.push({

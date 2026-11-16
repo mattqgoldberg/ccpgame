@@ -1,4 +1,20 @@
-import type { Az, ServiceKind, SimEdge, SimNode } from './types';
+import type { Account, Az, Region, ServiceKind, SimEdge, SimNode, SimState, StaffMember } from './types';
+
+/** What happens as a result of an event or decision. */
+export interface Outcome {
+  title: string;
+  body: string[];
+  tone?: 'info' | 'success' | 'warning' | 'danger';
+  codexIds?: string[];
+  /** Cash gained (positive) or lost (negative). */
+  cash?: number;
+  /** Multiplies revenue for the rest of the mission (1.05 = +5%). */
+  revenueBoost?: number;
+  /** The boss hands out a strike with this reason. */
+  strike?: string;
+  /** These kinds of nodes go down for `downHours`. */
+  down?: { kinds: ServiceKind[]; hours: number };
+}
 
 interface EventBase {
   id: string;
@@ -19,15 +35,31 @@ export type GameEvent = EventBase &
         kind: 'choice';
         title: string;
         body: string[];
-        options: { label: string; correct: boolean; outcome: string[] }[];
+        options: { label: string; correct: boolean; outcome: string[]; effect?: Pick<Outcome, 'cash' | 'revenueBoost' | 'strike'> }[];
         codexIds?: string[];
         /** Event scheduled if the player chooses wrong. */
         onWrong?: { eventId: string; delay: number };
       }
     | { kind: 'board'; questionId: string }
+    /** Inspects the player's setup and reacts: audits, attacks, leaked keys… */
+    | { kind: 'check'; test: (s: SimState) => boolean; pass: Outcome; fail: Outcome }
+    | { kind: 'hire'; staff: StaffMember; title: string; body: string[] }
+    | { kind: 'region-outage'; region: Region; duration: number; debrief: string[]; codexIds?: string[] }
+    | { kind: 'spot-reclaim'; duration: number; debrief: string[] }
+    | { kind: 'exam'; questionIds: string[] }
   );
 
-export type ObjectiveKind = 'availability' | 'latency' | 'cash' | 'served';
+export type ObjectiveKind =
+  | 'availability'
+  | 'latency'
+  | 'cash'
+  | 'served'
+  /** At most this share of EU customers' requests processed outside the EU. */
+  | 'residency'
+  /** Practice exam score at least this share. */
+  | 'exam'
+  /** Total spend (bill) at most this many dollars. */
+  | 'spend';
 
 export interface Objective {
   kind: ObjectiveKind;
@@ -65,6 +97,12 @@ export interface ChapterDef {
   strikes: boolean;
   /** Root MFA was already enabled in an earlier mission (same company account). */
   startsWithMfa?: boolean;
+  /** Checkout needs HTTPS: without it on every entry point, dynamic revenue drops. */
+  requireHttps?: boolean;
+  /** Account settings carried over from earlier missions. */
+  initialAccount?: Partial<Account>;
+  /** Strikes the intended play-through is expected to take (default 0). */
+  expectedStrikes?: number;
   objectives: Objective[];
   events: GameEvent[];
 }

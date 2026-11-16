@@ -1,7 +1,7 @@
-import { BALANCE, CATALOG, RANK, SIZES, canConnect, isComputeKind, nodeCapacity, nodeHourlyCost } from './catalog';
-import type { ChapterDef, GameEvent } from './chapter';
+import { ACCOUNT_PRICES, BALANCE, CATALOG, COMMIT_COVERAGE, RANK, REGION_NAMES, RTT, SIZES, SUPPORT_PLANS, canConnect, isComputeKind, nodeCapacity, nodeHourlyCost } from './catalog';
+import type { ChapterDef, GameEvent, Outcome } from './chapter';
 import { nextRandom } from './rng';
-import type { ChapterStats, NodeConfig, NodeMetrics, Notice, ServiceKind, SimNode, SimState, Traffic } from './types';
+import type { Account, ChapterStats, NodeConfig, NodeMetrics, Notice, Region, ServiceKind, SimNode, SimState, StaffMember, Traffic } from './types';
 
 /** How the boss reacts to trouble. */
 export const BOSS = {
@@ -27,6 +27,12 @@ interface Flow {
   rps: number;
   latency: number;
   viaEdge: boolean;
+  /** Where the customer is. */
+  origin: Region | 'global';
+  /** Region the request is currently in (null: still on the internet or at an edge location). */
+  at: Region | null;
+  /** Already answered by a queue; this is background work. */
+  counted?: boolean;
 }
 
 function emptyStats(): ChapterStats {
@@ -34,7 +40,16 @@ function emptyStats(): ChapterStats {
     demand: 0, served: 0, latencyWeighted: 0, revenue: 0, cost: 0, capex: 0,
     computeLoad: 0, computeCapacity: 0, outageDemand: 0, outageServed: 0, outageOccurred: false,
     compromises: 0, choicesCorrect: 0, choicesTotal: 0, alarmHours: 0, edgeServed: 0,
-    questionsCorrect: 0, questionsTotal: 0,
+    questionsCorrect: 0, questionsTotal: 0, euDynamic: 0, euOutside: 0, queueDropped: 0,
+  };
+}
+
+export function defaultAccount(): Account {
+  return {
+    support: 'basic', shieldAdvanced: false, secretsManager: false,
+    cloudtrail: false, config: false, guardduty: false, securityHub: false, inspector: false, macie: false, detective: false,
+    backup: false, costAnomaly: false, budget: null, budgetAlerted: false, savingsPlan: 0, reservedDb: 0,
+    organizations: false, scp: false, identityCenter: false, ec2Roles: false, costTags: false, staff: [],
   };
 }
 
@@ -59,6 +74,8 @@ export function createSim(ch: ChapterDef, seed = 1): SimState {
     alerts: [],
     alarmFiredAt: {},
     flags: { rootMfa: !!ch.startsWithMfa },
+    account: { ...defaultAccount(), ...structuredClone(ch.initialAccount ?? {}) },
+    revenueBoost: 1,
     boss: { enabled: ch.strikes, strikes: 0, badHours: 0, log: [] },
     last: { demand: { static: 0, dynamic: 0, junk: 0 }, served: 0, latencyMs: 0, revenue: 0, cost: 0, nodes: {}, edges: {} },
     history: [],
@@ -103,19 +120,32 @@ export function dayAndHour(hour: number): { day: number; hourOfDay: number } {
   return { day: Math.floor(hour / 24) + 1, hourOfDay: hour % 24 };
 }
 
+/** Edge services that aren't tied to one Region. */
+export function isGlobalKind(kind: ServiceKind): boolean {
+  return kind === 'users' || kind === 'route53' || kind === 'cloudfront' || kind === 'waf';
+}
+
+export function regionOf(n: SimNode): Region {
+  return n.config.region ?? 'us';
+}
+
 function activeOutage(s: SimState) {
   return s.effects.find((e) => e.kind === 'az-outage');
 }
 
 export function downReason(s: SimState, node: SimNode): string | undefined {
   if (node.readyAt !== undefined && s.hour < node.readyAt) {
-    return `Shipping: arrives in ${node.readyAt - s.hour}h`;
+    return `${node.kind === 'dx' ? 'Being installed' : 'Shipping'}: ready in ${node.readyAt - s.hour}h`;
   }
   if (node.compromisedUntil !== undefined && s.hour < node.compromisedUntil) {
     return 'Compromised: being rebuilt';
   }
+  const regionDown = s.effects.find((e) => e.kind === 'region-outage');
+  if (regionDown?.region && !isGlobalKind(node.kind) && node.kind !== 'onprem' && regionOf(node) === regionDown.region) {
+    return `${REGION_NAMES[regionDown.region].split(' ')[0]} Region outage`;
+  }
   const outage = activeOutage(s);
-  if (outage?.az && !CATALOG[node.kind].regional && node.config.az === outage.az) {
+  if (outage?.az && !CATALOG[node.kind].regional && node.config.az === outage.az && regionOf(node) === 'us') {
     if (node.config.multiAz) return undefined;
     return `${azName(outage.az)} outage`;
   }
@@ -124,9 +154,10 @@ export function downReason(s: SimState, node: SimNode): string | undefined {
 
 function effectiveCapacity(s: SimState, node: SimNode): number {
   const outage = activeOutage(s);
-  const cap = nodeCapacity(node);
+  let cap = nodeCapacity(node);
   // A Multi-AZ group loses the instances in the failed AZ until it relaunches them elsewhere.
-  if (node.kind === 'asg' && node.config.multiAz && outage && outage.since === s.hour) return cap / 2;
+  if (node.kind === 'asg' && node.config.multiAz && outage && outage.since === s.hour) cap /= 2;
+  if (node.kind === 'asg' && node.config.spot && s.effects.some((e) => e.kind === 'spot-reclaim')) cap *= BALANCE.spotReclaimKeep;
   return cap;
 }
 
@@ -142,6 +173,16 @@ function latencyScore(latencyMs: number, targetMs: number): number {
   return Math.max(0, (3 * targetMs - latencyMs) / (2 * targetMs));
 }
 
+/** Round trip from customers to a Region. A worldwide audience pays the old flat cost. */
+function rtt(origin: Region | 'global', region: Region): number {
+  return origin === 'global' ? BALANCE.originRttMs : RTT[origin][region];
+}
+
+/** From an edge location near the customer to a Region, over the AWS backbone. */
+function backbone(origin: Region | 'global', region: Region): number {
+  return origin === 'global' ? BALANCE.backboneMs : Math.round(RTT[origin][region] * 0.5);
+}
+
 // ── Demand ────────────────────────────────────────────────────────────────
 
 export function computeDemand(s: SimState, ch: ChapterDef): Traffic {
@@ -153,8 +194,8 @@ export function computeDemand(s: SimState, ch: ChapterDef): Traffic {
   const noise = 1 + (random(s) - 0.5) * 0.1;
   const spike = s.effects.filter((e) => e.kind === 'traffic-spike').reduce((m, e) => m * e.magnitude, 1);
   const satisfaction = 0.6 + (0.8 * s.satisfaction) / 100;
-  const users = s.nodes.find((n) => n.kind === 'users');
-  const hasDns = users && s.edges.some((e) => e.source === users.id && s.nodes.find((n) => n.id === e.target)?.kind === 'route53');
+  const sources = s.nodes.filter((n) => n.kind === 'users');
+  const hasDns = sources.some((u) => s.edges.some((e) => e.source === u.id && s.nodes.find((n) => n.id === e.target)?.kind === 'route53'));
   const findability = ch.requireDns && !hasDns ? BALANCE.noDnsFindability : 1;
   const total = peak * daily * noise * spike * satisfaction * findability;
   const junk = s.effects.filter((e) => e.kind === 'http-flood').reduce((sum, e) => sum + e.magnitude, 0);
@@ -173,6 +214,11 @@ interface FlowResult {
   edgeMb: number;
   s3Gets: number;
   cloudfrontRequests: number;
+  euDynamic: number;
+  euOutside: number;
+  queueDropped: number;
+  /** New SQS backlogs, by node id. */
+  backlogs: Record<string, number>;
   nodes: Record<string, NodeMetrics>;
   edges: Record<string, number>;
   edgeMix: Record<string, Traffic>;
@@ -181,7 +227,8 @@ interface FlowResult {
 export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
   const r: FlowResult = {
     servedStatic: 0, servedDynamic: 0, latencyWeighted: 0, edgeServed: 0, junkAtEdge: 0,
-    originMb: 0, edgeMb: 0, s3Gets: 0, cloudfrontRequests: 0, nodes: {}, edges: {}, edgeMix: {},
+    originMb: 0, edgeMb: 0, s3Gets: 0, cloudfrontRequests: 0, euDynamic: 0, euOutside: 0, queueDropped: 0,
+    backlogs: {}, nodes: {}, edges: {}, edgeMix: {},
   };
   const byId = new Map(s.nodes.map((n) => [n.id, n]));
   const down = new Map(s.nodes.map((n) => [n.id, downReason(s, n)]));
@@ -194,24 +241,33 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
   }
   const incoming = new Map<string, Flow[]>();
   const order = [...s.nodes].sort((a, b) => RANK[a.kind] - RANK[b.kind]);
+  const sources = s.nodes.filter((n) => n.kind === 'users');
 
   const serve = (node: SimNode, f: Flow, rps: number) => {
+    if (f.type === 'dynamic' && f.origin === 'eu' && node.kind !== 'sqs') {
+      r.euDynamic += rps;
+      if (isGlobalKind(node.kind) || regionOf(node) !== 'eu') r.euOutside += rps;
+    }
+    // Work pulled from a queue was already answered when the queue accepted it.
+    if (f.counted) return;
     const mb = f.type === 'dynamic' ? BALANCE.bytesDynamicMb : BALANCE.bytesStaticMb;
     if (f.viaEdge) r.edgeMb += rps * mb;
     else if (node.kind !== 'onprem' && node.kind !== 'lightsail') r.originMb += rps * mb;
     if (f.type === 'junk') return;
     if (f.type === 'static') r.servedStatic += rps;
     else r.servedDynamic += rps;
-    r.latencyWeighted += rps * (f.latency + (f.viaEdge ? BALANCE.edgeRttMs : BALANCE.originRttMs));
+    r.latencyWeighted += rps * (f.latency + (f.viaEdge ? BALANCE.edgeRttMs : 0));
     if (f.viaEdge) r.edgeServed += rps;
   };
 
   for (const node of order) {
     const def = CATALOG[node.kind];
     if (def.behavior === 'monitor') continue;
+    const sourceShare = node.config.share ?? 1 / sources.length;
+    const origin: Region | 'global' = node.config.region ?? 'global';
     const flows: Flow[] =
       def.behavior === 'source'
-        ? (['static', 'dynamic', 'junk'] as const).map((type) => ({ type, rps: demand[type], latency: 0, viaEdge: false }))
+        ? (['static', 'dynamic', 'junk'] as const).map((type) => ({ type, rps: demand[type] * sourceShare, latency: 0, viaEdge: false, origin, at: null }))
         : incoming.get(node.id) ?? [];
     const reason = down.get(node.id);
     const capacity = reason ? 0 : effectiveCapacity(s, node);
@@ -225,10 +281,24 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
     let throughput = 0;
 
     const children = outgoing.get(node.id) ?? [];
-    const forward = (f: Flow, rps: number, latency: number, viaEdge: boolean, eligible: (n: SimNode) => boolean, missing: string) => {
-      const targets = children.filter((c) => eligible(c.node));
+    /** Route 53 and CloudFront send each customer to the nearest healthy Region (latency routing + health checks). */
+    const nearest = (f: Flow, targets: { edgeId: string; node: SimNode }[]) => {
+      const regional = targets.filter((t) => !isGlobalKind(t.node.kind));
+      if (regional.length < 2) return targets;
+      const healthyOnes = regional.filter((t) => !down.get(t.node.id));
+      const pool = healthyOnes.length ? healthyOnes : regional;
+      if (f.origin === 'global') return pool;
+      const best = Math.min(...pool.map((t) => RTT[f.origin as Region][regionOf(t.node)]));
+      return pool.filter((t) => RTT[f.origin as Region][regionOf(t.node)] === best);
+    };
+    const forward = (
+      f: Flow, rps: number, latency: number, viaEdge: boolean,
+      eligible: (n: SimNode) => boolean, missing: string, routing?: 'nearest',
+    ) => {
+      let targets = children.filter((c) => eligible(c.node));
+      if (routing === 'nearest') targets = nearest(f, targets);
       if (targets.length === 0) {
-        if (rps > 0.01) warning = missing;
+        if (rps > 0.01 && !f.counted) warning = missing;
         dropped += rps;
         return;
       }
@@ -237,18 +307,66 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
         r.edges[t.edgeId] = (r.edges[t.edgeId] ?? 0) + share;
         const mix = (r.edgeMix[t.edgeId] ??= { static: 0, dynamic: 0, junk: 0 });
         mix[f.type] += share;
+        // Entering a Region from the internet or an edge location, or hopping between Regions, costs latency.
+        let lat = latency;
+        let at = f.at;
+        if (!isGlobalKind(t.node.kind) && t.node.kind !== 'onprem') {
+          const region = regionOf(t.node);
+          if (at === null) lat += viaEdge ? backbone(f.origin, region) : rtt(f.origin, region);
+          else if (at !== region) lat += RTT[at][region];
+          at = region;
+        } else if (t.node.kind === 'onprem' && at === null) {
+          lat += rtt(f.origin, 'us');
+          at = 'us';
+        }
         if (!incoming.has(t.node.id)) incoming.set(t.node.id, []);
-        incoming.get(t.node.id)!.push({ type: f.type, rps: share, latency, viaEdge });
+        incoming.get(t.node.id)!.push({ ...f, rps: share, latency: lat, viaEdge, at });
       }
     };
     // Hardware that hasn't arrived isn't plugged in yet, so nothing routes to it.
     const installed = (n: SimNode) => n.readyAt === undefined || s.hour >= n.readyAt;
-    const canTake = (type: FlowType) => (n: SimNode) => installed(n) && (CATALOG[n.kind].behavior !== 'storage' || type !== 'dynamic');
+    const canTake = (type: FlowType) => (n: SimNode) => {
+      if (!installed(n)) return false;
+      const b = CATALOG[n.kind].behavior;
+      if (b === 'storage') return type !== 'dynamic';
+      if (b === 'queue') return type === 'dynamic';
+      return true;
+    };
     const healthy = (type: FlowType) => (n: SimNode) => canTake(type)(n) && !down.get(n.id);
     const isData = (n: SimNode) => ['db', 'cache'].includes(CATALOG[n.kind].behavior);
     const noRoute = 'Not connected to anything that can handle this traffic';
 
-    for (const f of flows) {
+    if (def.behavior === 'queue') {
+      // Accept everything now; feed workers only as fast as they can go; keep the rest for later.
+      const workers = children.filter((c) => !down.get(c.node.id) && installed(c.node));
+      const drain = workers.reduce((sum, c) => sum + effectiveCapacity(s, c.node) * 0.95, 0);
+      let accepted = 0;
+      for (const f of flows) {
+        if (f.rps <= 0) continue;
+        if (!f.counted) serve(node, { ...f, latency: f.latency + hopLatency }, f.rps);
+        accepted += f.rps;
+      }
+      const pending = (node.backlog ?? 0) + accepted;
+      const sent = Math.min(pending, drain);
+      let backlog = pending - sent;
+      const max = Math.max(drain, accepted) * BALANCE.queueMaxHours;
+      if (backlog > max) {
+        const expired = backlog - max;
+        backlog = max;
+        r.queueDropped += expired;
+        r.servedDynamic -= expired;
+        dropped += expired;
+        warning = 'Queue overflowing: old orders are expiring';
+      }
+      r.backlogs[node.id] = backlog;
+      throughput = accepted;
+      if (sent > 0) {
+        const template = flows.find((f) => f.rps > 0) ?? { type: 'dynamic' as const, rps: 0, latency: 0, viaEdge: false, origin: 'global' as const, at: null };
+        forward({ ...template, type: 'dynamic', counted: true }, sent, 0, false, (n) => isComputeKind(n.kind), 'No workers to process the queue');
+      } else if (pending > 0 && !workers.length) warning = 'No workers to process the queue';
+    }
+
+    for (const f of def.behavior === 'queue' ? [] : flows) {
       const rps = f.rps * kept;
       if (rps <= 0) continue;
       throughput += rps;
@@ -256,9 +374,17 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
       switch (def.behavior) {
         case 'source':
         case 'dns':
-          forward(f, rps, latency, f.viaEdge, canTake(f.type), noRoute);
+          forward(f, rps, latency, f.viaEdge, canTake(f.type), noRoute, 'nearest');
           break;
+        case 'filter': {
+          // WAF rate-based rules drop most attack traffic before it reaches anything that costs money.
+          const pass = f.type === 'junk' ? rps * (1 - BALANCE.wafBlockRate) : rps;
+          if (f.type === 'junk') r.junkAtEdge += rps - pass;
+          forward(f, pass, latency, f.viaEdge, canTake(f.type), noRoute);
+          break;
+        }
         case 'lb':
+        case 'link':
           forward(f, rps, latency, f.viaEdge, healthy(f.type), 'No healthy targets');
           break;
         case 'cdn': {
@@ -269,7 +395,7 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
             serve(node, { ...f, latency, viaEdge: true }, hits);
             if (f.type === 'junk') r.junkAtEdge += hits;
           }
-          forward(f, rps - hits, latency + BALANCE.backboneMs, true, canTake(f.type), 'No origin configured');
+          forward(f, rps - hits, latency, true, canTake(f.type), 'No origin configured', 'nearest');
           break;
         }
         case 'compute':
@@ -310,7 +436,7 @@ export function simulateFlow(s: SimState, demand: Traffic): FlowResult {
       warning,
       throughput,
       failRate: arriving > 0 ? Math.min(1, dropped / arriving) : 0,
-      costPerHour: nodeHourlyCost(node, load),
+      costPerHour: nodeHourlyCost(node, node.kind === 'sqs' ? throughput : load),
     };
   }
   return r;
@@ -491,6 +617,68 @@ export function fireEvent(s: SimState, ev: GameEvent) {
     case 'board':
       pushNotice(s, { title: 'The board would like a word', body: [], tone: 'info', questionId: ev.questionId });
       break;
+    case 'check':
+      applyOutcome(s, ev.test(s) ? ev.pass : ev.fail);
+      break;
+    case 'hire':
+      s.account.staff.push(structuredClone(ev.staff));
+      pushNotice(s, { title: ev.title, body: ev.body, tone: 'info', codexIds: ['iam'] });
+      break;
+    case 'region-outage': {
+      s.effects.push({ eventId: ev.id, kind: 'region-outage', since: s.hour, until: s.hour + ev.duration, magnitude: 1, region: ev.region });
+      const hit = s.nodes.filter((n) => !isGlobalKind(n.kind) && n.kind !== 'onprem' && regionOf(n) === ev.region);
+      const elsewhere = s.nodes.some((n) => isComputeKind(n.kind) && n.kind !== 'onprem' && regionOf(n) !== ev.region);
+      alarmOrComplain(s, ev.id, {
+        title: `ALARM: the ${REGION_NAMES[ev.region]} Region is having a major outage`,
+        body: [
+          'The AWS Health Dashboard reports problems across several services in the Region. This is rare, but it happens.',
+          hit.length ? `Down: ${hit.map((n) => CATALOG[n.kind].name).join(', ')}.` : 'Nothing of yours runs there.',
+          elsewhere ? 'Route 53 health checks are sending customers to your other Region.' : 'You have nothing running in another Region to fail over to.',
+        ],
+        tone: elsewhere ? 'warning' : 'danger',
+        codexIds: ['regions', 'health-dashboard'],
+      });
+      break;
+    }
+    case 'spot-reclaim': {
+      s.effects.push({ eventId: ev.id, kind: 'spot-reclaim', since: s.hour, until: s.hour + ev.duration, magnitude: 1 });
+      const spot = s.nodes.filter((n) => n.kind === 'asg' && n.config.spot);
+      if (spot.length) {
+        pushNotice(s, {
+          title: 'AWS is reclaiming Spot capacity',
+          body: [
+            'Another customer needs the spare capacity your Spot Instances were using. AWS gave your instances a 2-minute warning and is taking most of them back.',
+            'Spot is up to 90% cheaper because it can be interrupted like this.',
+          ],
+          tone: 'warning',
+          codexIds: ['spot'],
+        });
+      }
+      break;
+    }
+    case 'exam':
+      pushNotice(s, { title: 'AWS Certified Cloud Practitioner: practice exam', body: [], tone: 'info', exam: { questionIds: ev.questionIds } });
+      break;
+  }
+}
+
+/** Shows an outcome and applies its consequences. */
+export function applyOutcome(s: SimState, o: Outcome) {
+  pushNotice(s, { title: o.title, body: o.body, tone: o.tone ?? (o.strike ? 'danger' : 'info'), codexIds: o.codexIds });
+  if (o.cash) {
+    s.cash += o.cash;
+    if (o.cash < 0) {
+      addBill(s, 'Fines & incident costs', -o.cash);
+      s.stats.cost += -o.cash;
+    }
+  }
+  if (o.revenueBoost) s.revenueBoost *= o.revenueBoost;
+  if (o.down) {
+    for (const n of s.nodes) if (o.down.kinds.includes(n.kind)) n.compromisedUntil = s.hour + o.down.hours;
+  }
+  if (o.strike) {
+    s.stats.compromises += 1;
+    addStrike(s, o.strike);
   }
 }
 
@@ -518,6 +706,22 @@ function endEffect(s: SimState, ch: ChapterDef, eventId: string) {
       ],
       tone: rate >= 0.95 ? 'success' : 'warning',
       codexIds: ev.codexIds,
+    });
+  } else if (ev.kind === 'region-outage') {
+    const rate = st && st.demand > 0 ? st.served / st.demand : 1;
+    pushNotice(s, {
+      title: `${REGION_NAMES[ev.region]} has recovered`,
+      body: [`During the Region outage you served ${pct(rate)} of requests.`, ...ev.debrief],
+      tone: rate >= 0.9 ? 'success' : 'warning',
+      codexIds: ev.codexIds,
+    });
+  } else if (ev.kind === 'spot-reclaim' && s.nodes.some((n) => n.kind === 'asg' && n.config.spot)) {
+    const rate = st && st.demand > 0 ? st.served / st.demand : 1;
+    pushNotice(s, {
+      title: 'Spot capacity is back',
+      body: [`While Spot capacity was reclaimed you served ${pct(rate)} of requests.`, ...ev.debrief],
+      tone: rate >= 0.97 ? 'success' : 'warning',
+      codexIds: ['spot'],
     });
   } else if (ev.kind === 'traffic-spike' && ev.debrief) {
     const rate = st && st.demand > 0 ? st.served / st.demand : 1;
@@ -618,7 +822,56 @@ function hourlyCosts(s: SimState, ch: ChapterDef, flow: FlowResult): number {
   charge('CloudFront data transfer', edgeGb * BALANCE.edgeTransferPerGb);
   charge('CloudFront requests', ((flow.cloudfrontRequests * perHour) / 1000) * BALANCE.cloudfrontPerThousand);
   charge('S3 requests', ((flow.s3Gets * perHour) / 1000) * BALANCE.s3PerThousandGets);
+
+  // Commitments: you pay them every hour whether or not you use the capacity.
+  const a = s.account;
+  const nodeCost = (kinds: ServiceKind[]) =>
+    s.nodes.filter((n) => kinds.includes(n.kind)).reduce((sum, n) => sum + (flow.nodes[n.id]?.costPerHour ?? nodeHourlyCost(n)), 0);
+  if (a.savingsPlan > 0) {
+    charge('Savings Plan commitment', a.savingsPlan);
+    charge('Savings Plan coverage', -Math.min(nodeCost(['ec2', 'asg', 'lambda']), a.savingsPlan * COMMIT_COVERAGE.savingsPlan));
+  }
+  if (a.reservedDb > 0) {
+    charge('Reserved DB commitment', a.reservedDb);
+    charge('Reserved DB coverage', -Math.min(nodeCost(['rds']), a.reservedDb * COMMIT_COVERAGE.reservedDb));
+  }
+  const monthly = (item: string, perMonth: number) => perMonth > 0 && charge(item, perMonth / HOURS_PER_MONTH);
+  monthly(`Support plan (${SUPPORT_PLANS[a.support].label})`, SUPPORT_PLANS[a.support].monthly);
+  monthly('Shield Advanced', a.shieldAdvanced ? ACCOUNT_PRICES.shieldAdvanced : 0);
+  monthly('Secrets Manager', a.secretsManager ? ACCOUNT_PRICES.secretsManager : 0);
+  monthly('CloudTrail', a.cloudtrail ? ACCOUNT_PRICES.cloudtrail : 0);
+  monthly('AWS Config', a.config ? ACCOUNT_PRICES.config : 0);
+  monthly('GuardDuty', a.guardduty ? ACCOUNT_PRICES.guardduty : 0);
+  monthly('Security Hub', a.securityHub ? ACCOUNT_PRICES.securityHub : 0);
+  monthly('Inspector', a.inspector ? ACCOUNT_PRICES.inspector : 0);
+  monthly('Macie', a.macie ? ACCOUNT_PRICES.macie : 0);
+  monthly('Detective', a.detective ? ACCOUNT_PRICES.detective : 0);
+  monthly('AWS Backup', a.backup ? ACCOUNT_PRICES.backup : 0);
   return total;
+}
+
+function checkBudget(s: SimState) {
+  const a = s.account;
+  if (a.budget === null || a.budgetAlerted || s.hour < 24) return;
+  const spent = Object.values(s.bill).reduce((sum, v) => sum + v, 0) - (s.bill['Hardware purchases (CapEx)'] ?? 0);
+  const forecast = (spent / (s.hour + 1)) * HOURS_PER_MONTH;
+  if (forecast <= a.budget) return;
+  a.budgetAlerted = true;
+  pushNotice(s, {
+    title: 'AWS Budgets alert',
+    body: [
+      `At this rate, this month’s AWS bill will be about $${Math.round(forecast).toLocaleString()}, over your $${a.budget.toLocaleString()} budget.`,
+      'Open the Bill tab to see what’s driving the cost.',
+    ],
+    tone: 'warning',
+    codexIds: ['budgets'],
+  });
+}
+
+/** Every public entry point (CloudFront, load balancers, API Gateway) serves HTTPS. */
+export function allHttps(s: SimState): boolean {
+  const entries = s.nodes.filter((n) => n.kind === 'cloudfront' || n.kind === 'elb' || n.kind === 'apigw');
+  return entries.length > 0 && entries.every((n) => n.config.https);
 }
 
 function raiseAlarms(s: SimState, flow: FlowResult, availability: number) {
@@ -687,9 +940,17 @@ export function step(s: SimState, ch: ChapterDef) {
   const latencyMs = served > 0 ? flow.latencyWeighted / served : 0;
   const lScore = latencyScore(latencyMs, ch.latencyTargetMs);
 
-  const revenue = (flow.servedStatic * ch.revenue.static + flow.servedDynamic * ch.revenue.dynamic) * 3600 * (0.5 + 0.5 * lScore);
+  // Browsers warn "Not secure" at checkout without HTTPS, and most shoppers leave.
+  const checkoutTrust = ch.requireHttps && !allHttps(s) ? 0.6 : 1;
+  const revenue =
+    (flow.servedStatic * ch.revenue.static + flow.servedDynamic * ch.revenue.dynamic * checkoutTrust) * 3600 * (0.5 + 0.5 * lScore) * s.revenueBoost;
   const cost = hourlyCosts(s, ch, flow);
   s.cash += revenue - cost;
+  for (const [id, backlog] of Object.entries(flow.backlogs)) {
+    const n = s.nodes.find((x) => x.id === id);
+    if (n) n.backlog = backlog;
+  }
+  checkBudget(s);
 
   const quality = availability * lScore * 100;
   s.satisfaction += (quality - s.satisfaction) * (quality < s.satisfaction ? 0.12 : 0.05);
@@ -699,6 +960,9 @@ export function step(s: SimState, ch: ChapterDef) {
   st.served += served * 3600;
   st.latencyWeighted += flow.latencyWeighted * 3600;
   st.edgeServed += flow.edgeServed * 3600;
+  st.euDynamic += flow.euDynamic * 3600;
+  st.euOutside += flow.euOutside * 3600;
+  st.queueDropped += flow.queueDropped * 3600;
   st.revenue += revenue;
   st.cost += cost;
   for (const n of s.nodes) {
@@ -827,12 +1091,75 @@ export function resolveChoice(s: SimState, ch: ChapterDef, optionIndex: number) 
   s.stats.choicesTotal += 1;
   if (option.correct) s.stats.choicesCorrect += 1;
   else if (ev.onWrong) s.scheduled.push({ at: s.hour + ev.onWrong.delay, eventId: ev.onWrong.eventId });
-  pushNotice(s, {
+  const e = option.effect;
+  const extra: string[] = [];
+  if (e?.revenueBoost && e.revenueBoost > 1) extra.push(`📈 Revenue +${Math.round((e.revenueBoost - 1) * 100)}% for the rest of the mission.`);
+  if (e?.cash) extra.push(e.cash > 0 ? `💰 +$${e.cash.toLocaleString()}` : `💸 That cost $${(-e.cash).toLocaleString()}.`);
+  applyOutcome(s, {
     title: option.correct ? 'Good call' : 'Not quite',
-    body: option.outcome,
+    body: [...option.outcome, ...extra],
     tone: option.correct ? 'success' : 'warning',
     codexIds: ev.codexIds,
+    cash: e?.cash,
+    revenueBoost: e?.revenueBoost,
+    strike: e?.strike,
   });
+}
+
+/** Changes account settings. Commitments (Savings Plans, reservations) can't be reduced once bought. */
+export function setAccount(s: SimState, patch: Partial<Account>): string | null {
+  if (patch.savingsPlan !== undefined && patch.savingsPlan < s.account.savingsPlan) return 'A Savings Plan is a 1- or 3-year commitment. You can add to it, but not cancel it.';
+  if (patch.reservedDb !== undefined && patch.reservedDb < s.account.reservedDb) return 'Reserved capacity is a 1- or 3-year commitment. You can’t give it back.';
+  if (patch.scp && !(patch.organizations ?? s.account.organizations)) return 'Service control policies need AWS Organizations first.';
+  if (patch.budget !== undefined) s.account.budgetAlerted = false;
+  Object.assign(s.account, patch);
+  if (patch.organizations === false) s.account.scp = false;
+  return null;
+}
+
+export function updateStaff(s: SimState, id: string, patch: Partial<StaffMember>) {
+  const person = s.account.staff.find((p) => p.id === id);
+  if (person) Object.assign(person, patch);
+}
+
+export function removeStaff(s: SimState, id: string) {
+  s.account.staff = s.account.staff.filter((p) => p.id !== id);
+}
+
+/** Kinds CloudFormation copies when deploying the stack to another Region. */
+const STACK_KINDS: ServiceKind[] = ['elb', 'asg', 'ec2', 'rds', 'elasticache', 'apigw', 'lambda', 'dynamodb', 'sqs'];
+
+/** Infrastructure as code: deploy a copy of the us-east-1 stack to another Region in one step. */
+export function deployStack(s: SimState, region: Region): string | null {
+  if (s.nodes.some((n) => STACK_KINDS.includes(n.kind) && regionOf(n) === region)) return `You already have a stack in ${REGION_NAMES[region]}.`;
+  const originals = s.nodes.filter((n) => STACK_KINDS.includes(n.kind) && regionOf(n) === 'us');
+  if (!originals.length) return 'There’s nothing in us-east-1 to copy yet.';
+  const offset = region === 'eu' ? 300 : 600;
+  const ids = new Map<string, string>();
+  for (const n of originals) {
+    const copy: SimNode = { ...structuredClone(n), id: `n${s.nextId++}`, config: { ...n.config, region }, position: { x: n.position.x, y: n.position.y + offset } };
+    delete copy.backlog;
+    delete copy.compromisedUntil;
+    ids.set(n.id, copy.id);
+    s.nodes.push(copy);
+  }
+  for (const e of [...s.edges]) {
+    const src = ids.get(e.source);
+    const dst = ids.get(e.target);
+    if (src && dst) s.edges.push({ id: `e${s.nextId++}`, source: src, target: dst });
+    else if (!src && dst) s.edges.push({ id: `e${s.nextId++}`, source: e.source, target: dst });
+  }
+  unlockCodex(s, ['cloudformation', 'automation-economics']);
+  return null;
+}
+
+/** Records the practice exam result and closes it. */
+export function recordExam(s: SimState, correct: number, total: number) {
+  if (!s.notices[0]?.exam) return;
+  s.notices.shift();
+  s.examScore = total > 0 ? correct / total : 0;
+  s.stats.questionsCorrect += correct;
+  s.stats.questionsTotal += total;
 }
 
 /** Records a board-question answer. The caller shows the explanation. */
