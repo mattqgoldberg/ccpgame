@@ -52,6 +52,8 @@ export interface NodeConfig {
   coldData?: boolean;
   /** S3: anyone on the internet can list and read the bucket. */
   publicBucket?: boolean;
+  /** Display name on the map, instead of the service name. */
+  label?: string;
 }
 
 export interface StaffMember {

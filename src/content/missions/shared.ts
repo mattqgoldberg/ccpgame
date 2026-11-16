@@ -1,5 +1,5 @@
 import type { GameEvent } from '../../sim/chapter';
-import type { NodeConfig, Region, SimEdge, SimNode } from '../../sim/types';
+import type { NodeConfig, Region, SimEdge, SimNode, StaffMember } from '../../sim/types';
 
 export const DAY = 24;
 
@@ -30,34 +30,34 @@ export function storeStack(o: StackOptions = {}): { nodes: SimNode[]; edges: Sim
   const customers = o.customers ?? [{ ...users, position: { x: 0, y: 240 } }];
   const nodes: SimNode[] = [
     ...customers,
-    { id: 'dns', kind: 'route53', config: {}, position: { x: 200, y: 240 } },
-    { id: 'cdn', kind: 'cloudfront', config: { https: sec.https }, position: { x: 560, y: 240 } },
-    { id: 'blog', kind: 's3', config: { encrypted: sec.encrypted }, position: { x: 800, y: 60 } },
-    { id: 'lb', kind: 'elb', config: { https: sec.https }, position: { x: 800, y: 240 } },
+    { id: 'dns', kind: 'route53', config: {}, position: { x: 180, y: 240 } },
+    { id: 'cdn', kind: 'cloudfront', config: { https: sec.https }, position: { x: 500, y: 240 } },
+    { id: 'blog', kind: 's3', config: { encrypted: sec.encrypted }, position: { x: 700, y: 60 } },
+    { id: 'lb', kind: 'elb', config: { https: sec.https }, position: { x: 700, y: 240 } },
     {
-      id: 'group', kind: 'asg', position: { x: 1040, y: 240 }, instances: 2,
+      id: 'group', kind: 'asg', position: { x: 900, y: 240 }, instances: 2,
       config: { size: 'medium', multiAz: true, sshOpen: false, minSize: 2, maxSize: 10, ...o.asg },
     },
-    { id: 'cache', kind: 'elasticache', config: { multiAz: true }, position: { x: 1280, y: 240 } },
-    { id: 'db', kind: 'rds', config: { size: 'medium', multiAz: true, encrypted: sec.encrypted, ...o.rds }, position: { x: 1520, y: 240 } },
-    { id: 'cw', kind: 'cloudwatch', config: {}, position: { x: 200, y: 480 } },
+    { id: 'cache', kind: 'elasticache', config: { multiAz: true }, position: { x: 1100, y: 240 } },
+    { id: 'db', kind: 'rds', config: { size: 'medium', multiAz: true, encrypted: sec.encrypted, ...o.rds }, position: { x: 1300, y: 240 } },
+    { id: 'cw', kind: 'cloudwatch', config: {}, position: { x: 0, y: 40 } },
   ];
   const edges: SimEdge[] = [
     ...customers.map((c) => edge(c.id, 'dns')),
     edge('cdn', 'blog'), edge('cdn', 'lb'), edge('lb', 'group'), edge('group', 'cache'), edge('cache', 'db'),
   ];
   if (o.waf) {
-    nodes.push({ id: 'fw', kind: 'waf', config: {}, position: { x: 380, y: 240 } });
+    nodes.push({ id: 'fw', kind: 'waf', config: {}, position: { x: 340, y: 240 } });
     edges.push(edge('dns', 'fw'), edge('fw', 'cdn'));
   } else {
     edges.push(edge('dns', 'cdn'));
   }
   if (o.orders) {
     nodes.push(
-      { id: 'api', kind: 'apigw', config: { https: sec.https }, position: { x: 800, y: 440 } },
-      { id: 'orders', kind: 'sqs', config: {}, position: { x: 1040, y: 440 } },
-      { id: 'fn', kind: 'lambda', config: {}, position: { x: 1280, y: 440 } },
-      { id: 'carts', kind: 'dynamodb', config: { encrypted: sec.encrypted }, position: { x: 1520, y: 440 } },
+      { id: 'api', kind: 'apigw', config: { https: sec.https }, position: { x: 700, y: 420 } },
+      { id: 'orders', kind: 'sqs', config: {}, position: { x: 900, y: 420 } },
+      { id: 'fn', kind: 'lambda', config: {}, position: { x: 1100, y: 420 } },
+      { id: 'carts', kind: 'dynamodb', config: { encrypted: sec.encrypted }, position: { x: 1300, y: 420 } },
     );
     edges.push(edge('cdn', 'api'), edge('api', 'orders'), edge('orders', 'fn'), edge('fn', 'carts'));
   }
@@ -97,3 +97,9 @@ export function decide(
   return { id, at, kind: 'choice', title, body: [body], codexIds, options };
 }
 
+
+/** The team after chapter 5: least privilege, MFA, keys only where needed. */
+export const TEAM: StaffMember[] = [
+  { id: 'priya', name: 'Priya', role: 'Developer', access: 'least', mfa: true, keys: true },
+  { id: 'sam', name: 'Sam', role: 'Bookkeeper', access: 'least', mfa: true, keys: false },
+];

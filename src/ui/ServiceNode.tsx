@@ -1,8 +1,8 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { useTut } from '../game/store';
-import { CATALOG, SIZES, nodeCapacity } from '../sim/catalog';
+import { CATALOG, REGION_NAMES, SIZES, STORAGE_PRICES, nodeCapacity } from '../sim/catalog';
 import { azName } from '../sim/engine';
-import type { NodeMetrics, SimNode, Traffic } from '../sim/types';
+import type { NodeMetrics, Region, SimNode, Traffic } from '../sim/types';
 import { CustomerChatter } from './CustomerChatter';
 import { compact } from './format';
 
@@ -35,12 +35,38 @@ function subtitle(node: SimNode): string {
     case 'route53':
       return 'mystartup.com';
     case 'cloudfront':
+    case 'waf':
+      return 'Global · edge';
     case 'elb':
     case 's3':
+    case 'apigw':
+    case 'dynamodb':
+    case 'sqs':
       return 'Regional · managed';
+    case 'lambda':
+      return 'Serverless · no servers to patch';
+    case 'vpn':
+      return 'Encrypted tunnel over the internet';
+    case 'dx':
+      return 'Private dedicated line';
     default:
       return '';
   }
+}
+
+const CUSTOMER_PLACES: Record<Region, string> = { us: 'Americas', eu: 'Europe', ap: 'Asia-Pacific' };
+
+function NodeTags({ node }: { node: SimNode }) {
+  const c = node.config;
+  const tags: string[] = [];
+  if (c.region && c.region !== 'us' && node.kind !== 'users') tags.push(`📍 ${REGION_NAMES[c.region].split(' ')[0]}`);
+  if (c.https) tags.push('🔒 HTTPS');
+  if (c.encrypted) tags.push('🔑 KMS');
+  if (c.spot) tags.push('Spot');
+  if (node.kind === 'sqs' && (node.backlog ?? 0) > 0.05) tags.push(`📬 ${compact((node.backlog ?? 0) * 3600)} waiting`);
+  if (node.kind === 's3' && c.dataGb) tags.push(`${compact(c.dataGb / 1000)} TB · ${STORAGE_PRICES[c.storageClass ?? 'standard'].label.replace('S3 ', '')}`);
+  if (!tags.length) return null;
+  return <div className="svc-tags">{tags.map((t) => <span key={t}>{t}</span>)}</div>;
 }
 
 export function ServiceNode({ data, selected }: NodeProps<ServiceRFNode>) {
@@ -61,12 +87,15 @@ export function ServiceNode({ data, selected }: NodeProps<ServiceRFNode>) {
       {node.kind === 'users' && <CustomerChatter />}
       <div className="svc-badge">{def.short}</div>
       <div className="svc-body">
-        <div className="svc-name">{def.name}</div>
+        <div className="svc-name">{node.config.label ?? def.name}</div>
         {node.kind === 'users' && demand ? (
-          <div className="svc-sub">{compact(demand.static + demand.dynamic)} req/s</div>
+          <div className="svc-sub">
+            {compact((demand.static + demand.dynamic) * (node.config.share ?? 1))} req/s{node.config.region ? ` · ${CUSTOMER_PLACES[node.config.region]}` : ''}
+          </div>
         ) : (
           <div className="svc-sub">{subtitle(node)}</div>
         )}
+        <NodeTags node={node} />
         {limited && !metrics?.down && (
           <div className="meter-row" title="How busy this service is. Red means it’s full and requests are failing.">
             <span className="meter-label">Load</span>

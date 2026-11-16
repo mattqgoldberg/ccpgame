@@ -1,12 +1,13 @@
 import type { ServiceKind } from '../../sim/types';
 import { missionOver, type Mission } from '../tutorial';
-import { DAY, decide, storeStack } from './shared';
+import { DAY, TEAM, decide, storeStack } from './shared';
 
 const base = {
   chapter: 9, available: [] as ServiceKind[], latencyTargetMs: 150, requireDns: true, freeTier: false, cloud: true, strikes: true,
   requireHttps: true, revenue: { static: 0.000004, dynamic: 0.00002 },
 };
 const carriedOver = {
+  staff: TEAM,
   secretsManager: true, support: 'business' as const, ec2Roles: true, organizations: true, scp: true,
   identityCenter: true, cloudtrail: true, config: true, guardduty: true, costTags: true, budget: 5000, backup: true,
 };

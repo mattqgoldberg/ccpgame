@@ -78,21 +78,30 @@ The full list, with hooks and exam trigger phrases, lives in `src/content/covera
 
 ## Campaign
 
-Playable now (milestone 1):
+24 missions across 11 chapters, all playable. Each mission unlocks after the previous one.
 
-| Mission | Title | What the player learns and does |
+| Ch | Missions | What the player learns and does |
 |---|---|---|
-| 0-1 | First Day | Select a node, read the inspector, press Play, read Cash/Traffic. |
-| 0-2 | The Rush | Goals tab, Morgan's strike rule, buy and wire a physical server before a traffic spike, 2×, the report card. |
-| 1-1 | Hello, AWS | Trusted Advisor, root MFA, first S3 bucket, the Codex. |
-| 1-2 | Find Us | Route 53, deleting a connection, the Bill tab and Free Tier. |
-| 1-3 | Around the World | Latency, CloudFront and edge locations, 4×, first investor questions. |
-| 2-1 | Moving the Store | Dynamic vs. static requests, Lightsail, satisfaction, scaling out before the peak, Shield Standard. |
-| 2-2 | Real Servers | EC2, security groups (SSH), instance types, RDS, shared responsibility decisions. |
-| 3-1 | Two of Everything | Availability Zones, load balancer, second AZ, RDS Multi-AZ, CloudWatch, an AZ outage. |
-| 3-2 | Going Viral | Auto Scaling (multi-AZ, max size), ElastiCache, a 3× spike, an HTTP flood. |
+| 0 The Garage | First Day · The Rush · The Outage | Map, inspector, Play; buying and wiring hardware; strikes; an outage you can't prevent (why cloud). |
+| 1 Into the Cloud | Hello, AWS · Find Us · Around the World | Six advantages of cloud, root MFA, Trusted Advisor, S3, Codex, Route 53, deleting connections, the bill, CloudFront. |
+| 2 The Store Goes Online | Moving the Store · Real Servers | Dynamic vs static, Lightsail, scaling out, Shield Standard, EC2, VPC basics, security groups, instance types, RDS, shared responsibility. |
+| 3 Going Viral | Two of Everything · Going Viral | AZs, ELB, Multi-AZ, CloudWatch, AZ outage, Auto Scaling, ElastiCache, HTTP flood. |
+| 4 E-Commerce | Checkout · Under Attack · Flash Sale | HTTPS/ACM, KMS, Secrets Manager, Artifact, PCI audit, WAF (SQLi, uncached flood), Shield Advanced decision, Lambda, API Gateway, DynamoDB, SQS, support plans, scheduled scaling. |
+| 5 Growing Team | New Hires · Many Accounts | IAM least privilege, MFA, access keys vs roles, offboarding, Organizations, SCPs, Identity Center, CloudTrail, Config, GuardDuty, tags. |
+| 6 Cost Crunch | The Bill · Commitments | Cost Explorer, Budgets, rightsizing, S3 storage classes, Cost Anomaly Detection, Savings Plans, Reserved Instances, Spot. |
+| 7 Go Global | Hello, Europe · Region Down | Region choice, GDPR data residency, CloudFormation stack copies, latency routing, Translate, DR strategies, Backup, Region outage. |
+| 8 The Acquisition | The Acquisition · Lights Out | 7 Rs, Application Migration Service, DMS, Snowball, VPN, Direct Connect, FSx, Storage Gateway, Directory Service, Outposts, BYOL, Marketplace, CAF, Partners. |
+| 9 Data & AI | Know Your Customers · Smart Store | Kinesis, Glue, Athena, Redshift, QuickSight, EMR, OpenSearch; Rekognition, Comprehend, Lex, Personalize, Bedrock, Polly, Transcribe, Textract, Kendra, SageMaker, Q, Neptune. |
+| 10 Finale | Trailhead Health · Certification Day | HIPAA: Artifact BAA, Macie, Inspector, Security Hub, Detective, Audit Manager, CloudHSM; then a practice exam from every question (70% to pass). |
 
-Planned chapters 4–10 (`src/content/chapters.ts`) follow the same mission-and-step format: e-commerce security, a growing team, a cost crunch, going global, an acquisition, data and AI, and a health-tech finale.
+Three kinds of gameplay carry the content:
+- **Building:** placing and wiring services on the map, and changing their settings (HTTPS, encryption, Spot, storage class, Region).
+- **The Account tab:** support plan, team IAM, governance, security services, budgets and commitments.
+- **Decisions and checks:**
+  - Morgan's requests: pick the right service; correct picks permanently boost revenue.
+  - "check" events (audits, leaked keys, SQL injection, outages), which reward or punish the setup you've built.
+
+Tests guarantee that every one of the 166 exam topics can be discovered somewhere in the campaign.
 
 ## Simulation model
 
@@ -130,7 +139,8 @@ src/
 
 ## Milestones
 
-1. ✅ **Vertical slice** (done): the simulation engine, plus chapters 0–3 as 9 guided missions with feature gating and boss strikes. Covers about 12 Tier-1 services, the monthly bill, one attack event, an AZ outage, one board question, and the report card. Goal: prove the core loop is fun.
+1. ✅ **Vertical slice:** the simulation engine, plus chapters 0–3 as guided missions with feature gating and boss strikes.
+2. ✅ **Full campaign:** chapters 4–10, regions, the Account tab, the practice exam, and Codex text for all 166 topics. Covers about 12 Tier-1 services, the monthly bill, one attack event, an AZ outage, one board question, and the report card. Goal: prove the core loop is fun.
 2. **Security and events:** chapters 4–5, the incident framework, shared-responsibility cards, IAM hiring, and the Codex.
 3. **Economy depth:** chapter 6, pricing commitments, support plans as the hint system, Trusted Advisor, and cost tooling.
 4. **Breadth:** chapters 7–10, the request system, the readiness meter, study mode, and the mock exam.

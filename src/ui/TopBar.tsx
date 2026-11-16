@@ -3,6 +3,7 @@ import { CHAPTERS } from '../content/chapters';
 import { useFeatures, useGame, useTut, type Speed } from '../game/store';
 import { BOSS } from '../sim/engine';
 import { clock, compact, money, pct } from './format';
+import { CashFloats } from './CashFloats';
 import { setMuted, useMuted } from './sound';
 
 export function TopBar() {
@@ -51,7 +52,10 @@ export function TopBar() {
       <div className="stats">
         {f.has('boss') && <BossMeter className={tut.boss} />}
         {f.has('stat-cash') && (
-          <Stat cls={tut.cash} label="Cash" value={money(sim.cash)} sub={`${net >= 0 ? '+' : ''}${money(net)}/h`} tone={net >= 0 ? 'good' : 'bad'} />
+          <div className="cash-wrap">
+            <Stat cls={tut.cash} label="Cash" value={money(sim.cash)} sub={`${net >= 0 ? '+' : ''}${money(net)}/h`} tone={net >= 0 ? 'good' : 'bad'} />
+            <CashFloats />
+          </div>
         )}
         {f.has('stat-traffic') && (
           <Stat label="Traffic" value={`${compact(sim.last.served)}/s`} sub={`${pct(success)} served`} tone={success >= 0.99 ? 'good' : success >= 0.9 ? 'warn' : 'bad'} />

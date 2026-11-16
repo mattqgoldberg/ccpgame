@@ -10,7 +10,9 @@
     "test": "vitest run",
     "typecheck": "tsc -b",
     "coverage:report": "tsx scripts/coverage-report.ts",
-    "balance": "tsx scripts/balance.ts"
+    "balance": "tsx scripts/balance.ts",
+    "debug:mission": "tsx scripts/debug-mission.ts",
+    "bill": "tsx scripts/bill.ts"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.1",

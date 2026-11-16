@@ -36,6 +36,7 @@ const PAUSE_NOTE = 'The game is paused. Press ▶ Play when you’re ready to co
 export function NoticeModal({ notice }: { notice: Notice }) {
   const { dismissNotice, choose } = useGame.getState();
   if (notice.questionId) return <QuestionModal key={notice.id} questionId={notice.questionId} />;
+  if (notice.exam) return <ExamModal key={notice.id} questionIds={notice.exam.questionIds} />;
   if (notice.strike) return <StrikeModal notice={notice} />;
   return (
     <Modal tone={notice.tone}>
@@ -130,6 +131,79 @@ function QuestionModal({ questionId }: { questionId: string }) {
           <button className="ghost" onClick={dismissNotice}>Skip</button>
         ) : (
           <button className="primary" onClick={() => answer(picked)} autoFocus>Continue</button>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/** The practice certification exam: every question, one at a time, with explanations, then a score. */
+function ExamModal({ questionIds }: { questionIds: string[] }) {
+  const finishExam = useGame((s) => s.finishExam);
+  // Shuffle once per exam so it doesn't follow the order of the campaign.
+  const [order] = useState(() => [...questionIds].sort(() => Math.random() - 0.5));
+  const [index, setIndex] = useState(-1);
+  const [picked, setPicked] = useState<number | null>(null);
+  const [correct, setCorrect] = useState(0);
+  const total = order.length;
+
+  if (index === -1) {
+    return (
+      <Modal wide>
+        <div className="eyebrow">AWS Certified Cloud Practitioner · practice exam</div>
+        <h2>Time for the exam</h2>
+        <p>{total} questions covering all four exam domains: Cloud Concepts, Security and Compliance, Cloud Technology and Services, and Billing, Pricing, and Support.</p>
+        <p>You need 70% to pass. You’ll see the explanation after each answer.</p>
+        <div className="modal-actions">
+          <button className="primary" onClick={() => setIndex(0)} autoFocus>Begin</button>
+        </div>
+      </Modal>
+    );
+  }
+  if (index >= total) {
+    const score = correct / total;
+    const passed = score >= 0.7;
+    return (
+      <Modal wide tone={passed ? 'success' : 'warning'}>
+        <div className="eyebrow">Practice exam results</div>
+        <h2>{passed ? 'You passed!' : 'Not quite yet'}</h2>
+        <div className="exam-score">{Math.round(score * 100)}%</div>
+        <p>
+          {correct} of {total} correct. {passed ? 'You’re ready for the real thing.' : 'Review the Codex (every exam topic you’ve met is there) and retry the mission.'}
+        </p>
+        <div className="modal-actions">
+          <button className="primary" onClick={() => finishExam(correct, total)} autoFocus>Continue</button>
+        </div>
+      </Modal>
+    );
+  }
+  const q = getQuestion(order[index])!;
+  return (
+    <Modal wide>
+      <div className="eyebrow">Question {index + 1} of {total} · {correct} correct so far</div>
+      <div className="exam-progress"><div style={{ width: `${(index / total) * 100}%` }} /></div>
+      <h3>{q.prompt}</h3>
+      <div className="options">
+        {q.options.map((o, i) => (
+          <button
+            key={o}
+            className={`option ${picked === null ? '' : i === q.answer ? 'right' : i === picked ? 'wrong' : 'faded'}`}
+            disabled={picked !== null}
+            onClick={() => {
+              setPicked(i);
+              if (i === q.answer) setCorrect((c) => c + 1);
+            }}
+          >
+            {o}
+          </button>
+        ))}
+      </div>
+      {picked !== null && <p className={picked === q.answer ? 'tone-good' : 'tone-warning'}>{picked === q.answer ? 'Correct. ' : 'Not quite. '}{q.explanation}</p>}
+      <div className="modal-actions">
+        {picked !== null && (
+          <button className="primary" autoFocus onClick={() => { setPicked(null); setIndex(index + 1); }}>
+            {index + 1 === total ? 'See results' : 'Next question →'}
+          </button>
         )}
       </div>
     </Modal>

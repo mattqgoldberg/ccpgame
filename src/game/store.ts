@@ -4,7 +4,7 @@ import { getQuestion } from '../content/questions';
 import { featuresAt, type Feature, type Mission, type Step, type Tab } from '../content/tutorial';
 import * as engine from '../sim/engine';
 import { buildReport, type Report } from '../sim/report';
-import type { NodeConfig, ServiceKind, SimState } from '../sim/types';
+import type { Account, NodeConfig, Region, ServiceKind, SimState, StaffMember } from '../sim/types';
 import { clearProgress, loadProgress, saveProgress, type Progress } from './progress';
 
 export type Speed = 0 | 1 | 2 | 4 | 8 | 16;
@@ -47,6 +47,11 @@ interface GameStore {
   moveNode: (id: string, position: { x: number; y: number }) => void;
   configure: (id: string, patch: Partial<NodeConfig>) => void;
   enableRootMfa: () => void;
+  setAccount: (patch: Partial<Account>) => void;
+  updateStaff: (id: string, patch: Partial<StaffMember>) => void;
+  removeStaff: (id: string) => void;
+  deployStack: (region: Region) => void;
+  finishExam: (correct: number, total: number) => void;
   dismissNotice: () => void;
   choose: (option: number) => void;
   answer: (option: number) => void;
@@ -241,6 +246,11 @@ export const useGame = create<GameStore>((set, get) => {
     moveNode: (id, position) => mutate((s) => engine.moveNode(s, id, position)),
     configure: (id, patch) => mutate((s) => engine.updateConfig(s, id, patch)),
     enableRootMfa: () => mutate((s) => engine.enableRootMfa(s)),
+    setAccount: (patch) => mutate((s) => engine.setAccount(s, patch)),
+    updateStaff: (id, patch) => mutate((s) => engine.updateStaff(s, id, patch)),
+    removeStaff: (id) => mutate((s) => engine.removeStaff(s, id)),
+    deployStack: (region) => mutate((s) => engine.deployStack(s, region)),
+    finishExam: (correct, total) => mutate((s) => engine.recordExam(s, correct, total)),
     dismissNotice: () => {
       const notice = get().sim?.notices[0];
       if (notice?.strike && !get().progress.seenStrikeIntro) {

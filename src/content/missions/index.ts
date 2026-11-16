@@ -16,6 +16,11 @@ export { COMPANY } from './shared';
 export const MISSIONS: Mission[] = [...CHAPTER_0, ...CHAPTER_1, ...CHAPTER_2, ...CHAPTER_3, ...CHAPTER_4, ...CHAPTER_5, ...CHAPTER_6, ...CHAPTER_7, ...CHAPTER_8, ...CHAPTER_9, ...CHAPTER_10];
 
 const MFA_MISSION = 1 + MISSIONS.findIndex((m) => m.steps.some((st) => st.done === mfaOn));
+MISSIONS.forEach((m) => {
+  // Once we're in the cloud there's no buying hardware, and Lightsail is outgrown by chapter 4.
+  const retired: Mission['hide'] = [...(m.chapter >= 1 ? ['svc:onprem' as const] : []), ...(m.chapter >= 4 ? ['svc:lightsail' as const] : [])];
+  m.hide = [...new Set([...(m.hide ?? []), ...retired])];
+});
 MISSIONS.forEach((m, i) => {
   // The engine validates placements against `available`: everything unlocked by the end of the mission.
   m.available = servicesIn(featuresAt(MISSIONS, i, m.steps.length - 1));

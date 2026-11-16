@@ -1,18 +1,19 @@
 import type { ServiceKind, SimNode, SimState } from '../../sim/types';
 import { acct, all, every, missionOver, node, tabOpen, type Mission } from '../tutorial';
-import { DAY, edge, storeStack } from './shared';
+import { DAY, TEAM, edge, storeStack } from './shared';
 
 const base = {
   chapter: 6, available: [] as ServiceKind[], latencyTargetMs: 150, requireDns: true, freeTier: false, cloud: true, strikes: true,
   requireHttps: true, revenue: { static: 0.000004, dynamic: 0.00002 },
 };
 const carriedOver = {
+  staff: TEAM,
   secretsManager: true, support: 'business' as const, ec2Roles: true, organizations: true, scp: true,
   identityCenter: true, cloudtrail: true, config: true, guardduty: true, costTags: true,
 };
 const archive: SimNode = {
-  id: 'archive', kind: 's3', position: { x: 1520, y: 40 },
-  config: { encrypted: true, dataGb: 60000, coldData: true, storageClass: 'standard' },
+  id: 'archive', kind: 's3', position: { x: 1100, y: 40 },
+  config: { encrypted: true, dataGb: 60000, coldData: true, storageClass: 'standard', label: 'Order archive' },
 };
 
 // ── 6-1 ───────────────────────────────────────────────────────────────────
@@ -116,8 +117,8 @@ const theBill: Mission = {
 const lean = storeStack({ https: true, encrypted: true, waf: true, orders: true, asg: { size: 'large', minSize: 4 }, rds: { size: 'large' } });
 // Order processing runs on a group of EC2 workers instead of Lambda here.
 const workers: SimNode = {
-  id: 'workers', kind: 'asg', position: { x: 1280, y: 440 }, instances: 2,
-  config: { size: 'large', multiAz: true, sshOpen: false, minSize: 2, maxSize: 8 },
+  id: 'workers', kind: 'asg', position: { x: 1100, y: 420 }, instances: 2,
+  config: { size: 'large', multiAz: true, sshOpen: false, minSize: 2, maxSize: 8, label: 'Order workers' },
 };
 const leanNodes = [...lean.nodes.filter((n) => n.id !== 'fn'), workers, { ...archive, config: { ...archive.config, storageClass: 'glacier' as const } }];
 const leanEdges = [

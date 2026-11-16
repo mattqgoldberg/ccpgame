@@ -48,4 +48,12 @@ export const FAILING_STRATEGIES: Strategy[] = [
       rootMfa: true,
     },
   },
+  { mission: '4-1', name: 'skip encryption and secrets', blueprint: { nodes: {}, edges: [] } },
+  { mission: '4-2', name: 'no web application firewall', blueprint: { nodes: {}, edges: [] } },
+  { mission: '4-3', name: 'no queue, no support plan', blueprint: { nodes: {}, edges: [] } },
+  { mission: '5-1', name: 'everyone stays an admin without MFA', blueprint: { nodes: {}, edges: [] } },
+  { mission: '6-1', name: 'leave everything oversized', blueprint: { nodes: {}, edges: [] } },
+  { mission: '6-2', name: 'no commitments or Spot', blueprint: { nodes: {}, edges: [] } },
+  { mission: '7-1', name: 'serve Europe from Virginia', blueprint: { nodes: {}, edges: [] } },
+  { mission: '10-1', name: 'skip the security scanners', blueprint: { nodes: {}, edges: [] } },
 ];

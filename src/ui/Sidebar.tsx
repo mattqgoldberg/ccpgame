@@ -5,11 +5,12 @@ import { domainOfTask } from '../content/exam';
 import type { Feature, Tab } from '../content/tutorial';
 import { useFeatures, useGame, useTut } from '../game/store';
 import { advisorChecks } from '../sim/advisor';
-import { CATALOG, SIZES, nodeCapacity, nodeHourlyCost } from '../sim/catalog';
-import { azName } from '../sim/engine';
+import { CATALOG, REGION_NAMES, SIZES, STORAGE_PRICES, SUPPORT_PLANS, nodeCapacity, nodeHourlyCost } from '../sim/catalog';
+import { azName, isGlobalKind } from '../sim/engine';
 import { evaluateObjective } from '../sim/report';
-import type { InstanceSize, SimNode } from '../sim/types';
+import type { InstanceSize, Region, SimNode, StorageClass } from '../sim/types';
 import { clock, compact, money, pct } from './format';
+import { AccountPanel } from './AccountPanel';
 import { TrafficChart } from './TrafficChart';
 
 export const TABS: { id: Tab; label: string; feature: Feature }[] = [
@@ -18,6 +19,7 @@ export const TABS: { id: Tab; label: string; feature: Feature }[] = [
   { id: 'bill', label: 'Bill', feature: 'tab-bill' },
   { id: 'advisor', label: 'Advisor', feature: 'tab-advisor' },
   { id: 'codex', label: 'Codex', feature: 'tab-codex' },
+  { id: 'account', label: 'Account', feature: 'tab-account' },
 ];
 
 export function Sidebar() {
@@ -35,6 +37,7 @@ export function Sidebar() {
         {tab === 'bill' && <BillPanel />}
         {tab === 'advisor' && <AdvisorPanel />}
         {tab === 'codex' && <CodexPanel />}
+        {tab === 'account' && <AccountPanel />}
       </div>
     </aside>
   );
@@ -131,7 +134,10 @@ const AZ_OPTIONS = [{ value: 'a' as const, label: azName('a') }, { value: 'b' as
 function NodeConfigFields({ node }: { node: SimNode }) {
   const configure = useGame((s) => s.configure);
   const f = useFeatures();
-  const tut = { size: useTut('inspect-size'), az: useTut('inspect-az'), multi: useTut('inspect-multiaz'), ssh: useTut('inspect-ssh') };
+  const tut = {
+    size: useTut('inspect-size'), az: useTut('inspect-az'), multi: useTut('inspect-multiaz'), ssh: useTut('inspect-ssh'),
+    https: useTut('inspect-https'), enc: useTut('inspect-encryption'), spot: useTut('inspect-spot'), storage: useTut('inspect-storage'), region: useTut('inspect-region'),
+  };
   const c = node.config;
   const set = (patch: Partial<SimNode['config']>) => configure(node.id, patch);
   const sized = f.has('config-size') && (node.kind === 'ec2' || node.kind === 'asg' || node.kind === 'rds');
@@ -139,7 +145,12 @@ function NodeConfigFields({ node }: { node: SimNode }) {
   const multi = f.has('config-multiaz') && ['asg', 'rds', 'elasticache'].includes(node.kind);
   const server = f.has('config-ssh') && (node.kind === 'ec2' || node.kind === 'asg');
   const range = f.has('config-asg-range') && node.kind === 'asg';
-  if (!sized && !zoned && !multi && !server && !range) return null;
+  const https = f.has('config-https') && ['cloudfront', 'elb', 'apigw'].includes(node.kind);
+  const enc = f.has('config-encryption') && ['rds', 's3', 'dynamodb'].includes(node.kind);
+  const spot = f.has('config-spot') && node.kind === 'asg';
+  const storage = f.has('config-storage') && node.kind === 's3';
+  const region = f.has('config-region') && !isGlobalKind(node.kind) && node.kind !== 'onprem';
+  if (!sized && !zoned && !multi && !server && !range && !https && !enc && !spot && !storage && !region) return null;
   return (
     <div className="config">
       {sized && (
@@ -178,6 +189,36 @@ function NodeConfigFields({ node }: { node: SimNode }) {
       {server && (
         <div className={tut.ssh} data-tut="inspect-ssh">
           <Toggle danger label="Security group: allow SSH (port 22) from 0.0.0.0/0" checked={!!c.sshOpen} onChange={(sshOpen) => set({ sshOpen })} />
+        </div>
+      )}
+      {https && (
+        <div className={tut.https} data-tut="inspect-https">
+          <Toggle label="HTTPS with a free ACM certificate (encryption in transit)" checked={!!c.https} onChange={(v) => set({ https: v })} />
+        </div>
+      )}
+      {enc && (
+        <div className={tut.enc} data-tut="inspect-encryption">
+          <Toggle label="Encrypt at rest with a KMS key" checked={!!c.encrypted} onChange={(v) => set({ encrypted: v })} />
+        </div>
+      )}
+      {spot && (
+        <div className={tut.spot} data-tut="inspect-spot">
+          <Toggle label="Run on Spot Instances (~70% cheaper, can be reclaimed)" checked={!!c.spot} onChange={(v) => set({ spot: v })} />
+        </div>
+      )}
+      {storage && (
+        <div className={tut.storage} data-tut="inspect-storage">
+          <Select
+            label={`Storage class${c.dataGb ? ` · ${c.dataGb.toLocaleString()} GB${c.coldData ? ', rarely read' : ''}` : ''}`}
+            value={c.storageClass ?? 'standard'}
+            options={(Object.keys(STORAGE_PRICES) as StorageClass[]).map((k) => ({ value: k, label: `${STORAGE_PRICES[k].label} · $${STORAGE_PRICES[k].perGb}/GB-mo` }))}
+            onChange={(storageClass) => set({ storageClass })}
+          />
+        </div>
+      )}
+      {region && (
+        <div className={tut.region} data-tut="inspect-region">
+          <Select label="AWS Region" value={c.region ?? 'us'} options={(Object.keys(REGION_NAMES) as Region[]).map((r) => ({ value: r, label: REGION_NAMES[r] }))} onChange={(r) => set({ region: r })} />
         </div>
       )}
     </div>
@@ -253,6 +294,7 @@ function InspectPanel() {
         )}
         {m?.down && (<><dt>Status</dt><dd className="tone-danger">{m.downReason}</dd></>)}
         {m?.warning && (<><dt>Problem</dt><dd className="tone-warning">{m.warning}</dd></>)}
+        {node.kind === 'sqs' && (<><dt>Waiting</dt><dd>{compact((node.backlog ?? 0) * 3600)} orders in the queue</dd></>)}
       </dl>
       <p className="muted small">{def.pricingHint}</p>
       {node.kind !== 'users' && canDelete && (
@@ -269,8 +311,30 @@ function BillPanel() {
   const chapter = useGame((s) => s.mission)!;
   const lines = Object.entries(sim.bill).filter(([, v]) => Math.abs(v) >= 0.005).sort((a, b) => b[1] - a[1]);
   const total = lines.reduce((s, [, v]) => s + v, 0);
+  const explorer = useFeatures().has('cost-explorer');
+  const top = lines.filter(([, v]) => v > 0).slice(0, 6);
+  const biggest = top[0]?.[1] ?? 1;
+  const hours = Math.max(1, sim.hour);
+  const forecast = (total / hours) * chapter.lengthHours;
   return (
     <>
+      {explorer && (
+        <div className="explorer">
+          <h4>Cost Explorer</h4>
+          <p className="small muted">
+            Spend so far {money(total)} · forecast for this mission {money(forecast)}
+          </p>
+          <ul className="cost-bars">
+            {top.map(([k, v]) => (
+              <li key={k}>
+                <span className="cost-name">{k}</span>
+                <span className="cost-track"><span style={{ width: `${(v / biggest) * 100}%` }} /></span>
+                <span className="cost-value">{money(v)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <h4>Bill so far this month</h4>
       <table className="bill">
         <tbody>
@@ -309,7 +373,11 @@ function AdvisorPanel() {
   return (
     <>
       <h4>Trusted Advisor</h4>
-      <p className="small muted">Basic Support plan: core security checks only.</p>
+      <p className="small muted">
+        {SUPPORT_PLANS[sim.account.support].allChecks
+          ? `${SUPPORT_PLANS[sim.account.support].label} Support: every check is enabled.`
+          : `${SUPPORT_PLANS[sim.account.support].label} Support: core security checks only.`}
+      </p>
       <ul className="checks">
         {checks.map((c) => (
           <li key={c.id} className={`check-${c.status}`}>

@@ -1,12 +1,13 @@
 import type { ServiceKind, SimNode } from '../../sim/types';
 import { all, allLinked, lacks, missionOver, type Mission } from '../tutorial';
-import { DAY, decide, edge, storeStack, users } from './shared';
+import { DAY, TEAM, decide, edge, storeStack, users } from './shared';
 
 const base = {
   chapter: 8, available: [] as ServiceKind[], latencyTargetMs: 150, requireDns: true, freeTier: false, cloud: true, strikes: true,
   requireHttps: true, revenue: { static: 0.000004, dynamic: 0.00002 },
 };
 const carriedOver = {
+  staff: TEAM,
   secretsManager: true, support: 'business' as const, ec2Roles: true, organizations: true, scp: true,
   identityCenter: true, cloudtrail: true, config: true, guardduty: true, costTags: true, budget: 4000, backup: true,
 };
@@ -17,10 +18,10 @@ const store = storeStack({
   https: true, encrypted: true, waf: true, orders: true,
   customers: [{ ...users, config: { share: 0.88 }, position: { x: 0, y: 200 } }],
 });
-const summitUsers: SimNode = { id: 'summit', kind: 'users', config: { share: 0.12 }, position: { x: 0, y: 720 } };
+const summitUsers: SimNode = { id: 'summit', kind: 'users', config: { share: 0.12, label: 'Summit’s customers' }, position: { x: 0, y: 720 } };
 const summitServers: SimNode[] = [
-  { id: 'summit-1', kind: 'onprem', config: {}, position: { x: 420, y: 660 } },
-  { id: 'summit-2', kind: 'onprem', config: {}, position: { x: 420, y: 800 } },
+  { id: 'summit-1', kind: 'onprem', config: { label: 'Summit server 1' }, position: { x: 420, y: 660 } },
+  { id: 'summit-2', kind: 'onprem', config: { label: 'Summit server 2' }, position: { x: 420, y: 800 } },
 ];
 
 const summitMigrated: Parameters<typeof all>[0] = ({ sim }) =>
@@ -133,7 +134,7 @@ const acquisition: Mission = {
 
 // ── 8-2 ───────────────────────────────────────────────────────────────────
 
-const warehouse: SimNode = { id: 'warehouse', kind: 'onprem', config: {}, position: { x: 420, y: 720 } };
+const warehouse: SimNode = { id: 'warehouse', kind: 'onprem', config: { label: 'Summit warehouse' }, position: { x: 420, y: 720 } };
 
 const lightsOut: Mission = {
   ...base,
